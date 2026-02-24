@@ -1,0 +1,16 @@
+{
+  "rules": {
+    "competitions": {
+      "clicker": {
+        "$uid": {
+          ".read": true,
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      },
+      "city_rankings": {
+        ".read": true,
+        ".write": "auth != null"
+      }
+    }
+  }
+}

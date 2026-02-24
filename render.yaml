@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: night-mode-api
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: AUTH_MODE
+        value: required
+      - key: USE_FIREBASE
+        value: true
+      - key: JWT_SECRET
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+
+  - type: web
+    name: night-mode-web
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: NEXT_PUBLIC_API_BASE_URL
+        value: https://night-mode-api.onrender.com

@@ -1,0 +1,37 @@
+{
+  "nav": {
+    "home": "Home",
+    "map": "Map",
+    "profile": "Profile",
+    "competitions": "Competitions",
+    "qr": "QR",
+    "story": "Story"
+  },
+  "home": {
+    "title": "Night Mode: Global Night Community",
+    "subtitle": "Profiles, unique QR merch, and gamified competitions in one MVP.",
+    "cta": "Create profile",
+    "mapTitle": "Night Mode user map"
+  },
+  "story": {
+    "title": "Brand story",
+    "p1": "Night Mode started as a local capsule for ravers and club culture.",
+    "p2": "Now the brand mission is to connect cities and scenes through one map.",
+    "p3": "Every item receives a unique QR permanently linked to the owner profile." 
+  },
+  "map": {
+    "title": "Global map",
+    "subtitle": "Add your points, filter countries and open member profiles."
+  },
+  "profile": {
+    "title": "Member profile"
+  },
+  "competitions": {
+    "title": "Competitions",
+    "subtitle": "Weekly city ranking by merch and personal clicker challenge."
+  },
+  "qr": {
+    "title": "QR and merch binding",
+    "subtitle": "Scan via browser camera and bind items to your profile."
+  }
+}
