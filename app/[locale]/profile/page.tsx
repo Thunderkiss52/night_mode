@@ -1,4 +1,3 @@
-import ClickerGame from '@/components/competitions/ClickerGame';
 import AuthSessionPanel from '@/components/profile/AuthSessionPanel';
 import ItemsGrid from '@/components/profile/ItemsGrid';
 import ProfileCard from '@/components/profile/ProfileCard';
@@ -31,7 +30,7 @@ export default async function ProfilePage({ params }: { params: { locale: string
       </section>
 
       <ItemsGrid items={demoItems} />
-      <ClickerGame uid={demoProfile.uid} />
+      {/* <ClickerGame uid={demoProfile.uid} /> */}
     </div>
   );
 }
