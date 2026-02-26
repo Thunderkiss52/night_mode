@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from app.core.config import settings
+from app.core.geocoder import ReverseGeocoder
 from app.domain.schemas import CityRankingItem, QrBindIn, UserLocation, UserLocationCreate
 from app.infrastructure.firebase_admin import get_firestore_client
 from app.infrastructure.stores.memory_store import make_qr_hash, store
@@ -13,8 +15,19 @@ except Exception:  # pragma: no cover
 
 
 class NightRepository:
+    _PLACEHOLDER_VALUES = {
+        '',
+        'unknown',
+        'custom point',
+        'custom',
+        'n/a',
+        'none',
+        'null',
+    }
+
     def __init__(self) -> None:
         self.db = get_firestore_client()
+        self.geocoder = ReverseGeocoder(settings=settings)
 
     @property
     def using_firestore(self) -> bool:
@@ -54,12 +67,13 @@ class NightRepository:
         return result
 
     def create_location(self, payload: UserLocationCreate) -> UserLocation:
+        city, country = self._resolve_location_details(payload)
         location = UserLocation(
             id=f'loc-{int(datetime.now(timezone.utc).timestamp() * 1000)}',
             uid=payload.uid,
             name=payload.name,
-            city=payload.city,
-            country=payload.country,
+            city=city,
+            country=country,
             lat=payload.lat,
             lng=payload.lng,
             created_at=datetime.now(timezone.utc),
@@ -71,6 +85,25 @@ class NightRepository:
 
         self.db.collection('locations').document(location.id).set(location.model_dump())
         return location
+
+    def _resolve_location_details(self, payload: UserLocationCreate) -> tuple[str, str]:
+        city = payload.city.strip() if isinstance(payload.city, str) else ''
+        country = payload.country.strip() if isinstance(payload.country, str) else ''
+
+        if not self._is_placeholder(city) and not self._is_placeholder(country):
+            return city, country
+
+        geocoded = self.geocoder.reverse(payload.lat, payload.lng)
+        if not geocoded:
+            return city or 'Unknown', country or 'Unknown'
+
+        resolved_city = geocoded.city if self._is_placeholder(city) and geocoded.city else city
+        resolved_country = geocoded.country if self._is_placeholder(country) and geocoded.country else country
+        return resolved_city or 'Unknown', resolved_country or 'Unknown'
+
+    @classmethod
+    def _is_placeholder(cls, value: str) -> bool:
+        return value.strip().lower() in cls._PLACEHOLDER_VALUES
 
     def list_city_ranking(self) -> list[CityRankingItem]:
         if not self.using_firestore:

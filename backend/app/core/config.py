@@ -39,6 +39,29 @@ class Settings:
     firebase_service_account_file: str = os.getenv('FIREBASE_SERVICE_ACCOUNT_FILE', '')
     firebase_service_account_json: str = os.getenv('FIREBASE_SERVICE_ACCOUNT_JSON', '')
 
+    geocoder_primary: str = os.getenv('GEOCODER_PRIMARY', 'nominatim')
+    geocoder_timeout_seconds: int = int(os.getenv('GEOCODER_TIMEOUT_SECONDS', '1'))
+
+    nominatim_reverse_url: str = os.getenv(
+        'NOMINATIM_REVERSE_URL',
+        'https://nominatim.openstreetmap.org/reverse',
+    )
+    nominatim_api_key: str = os.getenv('NOMINATIM_API_KEY', '')
+    nominatim_user_agent: str = os.getenv('NOMINATIM_USER_AGENT', 'night-mode-api/1.0')
+    nominatim_email: str = os.getenv('NOMINATIM_EMAIL', '')
+
+    yandex_geocoder_url: str = os.getenv(
+        'YANDEX_GEOCODER_URL',
+        'https://geocode-maps.yandex.ru/1.x/',
+    )
+    yandex_geocoder_api_key: str = os.getenv('YANDEX_GEOCODER_API_KEY', '')
+
+    google_geocoder_url: str = os.getenv(
+        'GOOGLE_GEOCODER_URL',
+        'https://maps.googleapis.com/maps/api/geocode/json',
+    )
+    google_geocoder_api_key: str = os.getenv('GOOGLE_GEOCODER_API_KEY', '')
+
     @property
     def cors_origins(self) -> list[str]:
         return [item.strip() for item in self.cors_origins_raw.split(',') if item.strip()]

@@ -54,6 +54,8 @@ Backend `.env`:
 - `USE_FIREBASE=true`
 - `FIREBASE_PROJECT_ID`
 - `FIREBASE_SERVICE_ACCOUNT_FILE` или `FIREBASE_SERVICE_ACCOUNT_JSON`
+- `GEOCODER_PRIMARY` (`nominatim` | `yandex` | `google`)
+- `NOMINATIM_API_KEY` / `YANDEX_GEOCODER_API_KEY` / `GOOGLE_GEOCODER_API_KEY`
 
 ## API endpoints
 - `GET /health`
