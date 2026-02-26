@@ -201,6 +201,10 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Keep frontend source lib tracked for this repository.
+!/lib/
+!/lib/**
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
