@@ -11,3 +11,17 @@ backend/app/__pycache__
 .env.local
 .env
 .idea
+
+# Keep build-critical sources in context even if broad ignore rules appear.
+!app
+!app/**
+!components
+!components/**
+!lib
+!lib/**
+!public
+!public/**
+!package.json
+!package-lock.json
+!tsconfig.json
+!next.config.mjs
