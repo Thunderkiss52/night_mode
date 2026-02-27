@@ -62,6 +62,17 @@ class Settings:
     )
     google_geocoder_api_key: str = os.getenv('GOOGLE_GEOCODER_API_KEY', '')
 
+    telegram_bot_token: str = os.getenv('TELEGRAM_BOT_TOKEN', '')
+    telegram_bot_username: str = os.getenv('TELEGRAM_BOT_USERNAME', '')
+    telegram_webapp_url: str = os.getenv('TELEGRAM_WEBAPP_URL', '')
+    telegram_webapp_title: str = os.getenv('TELEGRAM_WEBAPP_TITLE', 'NM Clicker')
+    telegram_initdata_max_age_seconds: int = int(os.getenv('TELEGRAM_INITDATA_MAX_AGE_SECONDS', '86400'))
+
+    clicker_max_taps_per_second: int = int(os.getenv('CLICKER_MAX_TAPS_PER_SECOND', '10'))
+    clicker_referral_bonus_levels: int = int(os.getenv('CLICKER_REFERRAL_BONUS_LEVELS', '3'))
+    clicker_daily_bonus_per_level: int = int(os.getenv('CLICKER_DAILY_BONUS_PER_LEVEL', '1000'))
+    clicker_admin_token: str = os.getenv('CLICKER_ADMIN_TOKEN', '')
+
     @property
     def cors_origins(self) -> list[str]:
         return [item.strip() for item in self.cors_origins_raw.split(',') if item.strip()]

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "dev:web": "next dev",
     "dev:api": "uvicorn app.main:app --app-dir backend --reload --host 0.0.0.0 --port 8000",
+    "dev:bot": "cd backend && python3 -m app.bot.main",
     "docker:up": "docker compose up --build -d",
     "docker:down": "docker compose down"
   },

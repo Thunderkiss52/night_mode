@@ -56,6 +56,14 @@ Backend `.env`:
 - `FIREBASE_SERVICE_ACCOUNT_FILE` или `FIREBASE_SERVICE_ACCOUNT_JSON`
 - `GEOCODER_PRIMARY` (`nominatim` | `yandex` | `google`)
 - `NOMINATIM_API_KEY` / `YANDEX_GEOCODER_API_KEY` / `GOOGLE_GEOCODER_API_KEY`
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`
+- `TELEGRAM_WEBAPP_URL`, `TELEGRAM_WEBAPP_TITLE`
+- `TELEGRAM_INITDATA_MAX_AGE_SECONDS`
+- `CLICKER_MAX_TAPS_PER_SECOND`, `CLICKER_REFERRAL_BONUS_LEVELS`, `CLICKER_DAILY_BONUS_PER_LEVEL`
+- `CLICKER_ADMIN_TOKEN`
+
+Frontend `.env.local`:
+- `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME`
 
 ## API endpoints
 - `GET /health`
@@ -66,6 +74,14 @@ Backend `.env`:
 - `POST /api/locations`
 - `GET /api/competitions/city-ranking`
 - `POST /api/qr/bind`
+- `POST /api/clicker/auth/telegram`
+- `GET /api/clicker/state`
+- `POST /api/clicker/tap`
+- `POST /api/clicker/daily-bonus`
+- `POST /api/clicker/referral/apply`
+- `GET /api/clicker/leaderboard`
+- `POST /api/clicker/lottery/enter`
+- `GET /api/clicker/admin/lottery`
 
 ## Деплой
 - Docker Compose: [docker-compose.yml](docker-compose.yml)
@@ -75,5 +91,6 @@ Backend `.env`:
 ## Команды
 - `npm run dev:web`
 - `npm run dev:api`
+- `npm run dev:bot`
 - `npm run docker:up`
 - `npm run docker:down`

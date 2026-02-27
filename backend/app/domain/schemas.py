@@ -90,3 +90,117 @@ class CurrentUserOut(BaseModel):
     ok: bool = True
     uid: str
     email: str | None = None
+
+
+class ClickerState(BaseModel):
+    uid: str
+    telegram_user_id: int | None = None
+    username: str | None = None
+    display_name: str = 'Player'
+    points: int = Field(default=0, ge=0)
+    level: int = Field(default=1, ge=1)
+    multiplier: int = Field(default=1, ge=1)
+    referrals: int = Field(default=0, ge=0)
+    referred_by: int | None = None
+    daily_bonus_available: bool = True
+    daily_bonus_claimed_at: datetime | None = None
+    next_daily_bonus_at: datetime | None = None
+    lottery_joined: bool = False
+    lottery_entered_at: datetime | None = None
+    night_mode_unlocked: bool = False
+    taps_in_current_second: int = Field(default=0, ge=0)
+    level_start_points: int = Field(default=0, ge=0)
+    next_level_points: int | None = None
+    updated_at: datetime
+
+
+class ClickerStateOut(BaseModel):
+    ok: bool = True
+    state: ClickerState
+
+
+class ClickerAuthTelegramIn(BaseModel):
+    init_data: str | None = Field(default=None, min_length=10)
+    dev_telegram_user_id: int | None = Field(default=None, gt=0)
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+
+
+class ClickerAuthOut(BaseModel):
+    ok: bool = True
+    access_token: str
+    token_type: str = 'bearer'
+    expires_in: int
+    uid: str
+    start_param: str | None = None
+    state: ClickerState
+
+
+class ClickerTapIn(BaseModel):
+    taps: int = Field(default=1, ge=1, le=50)
+
+
+class ClickerTapOut(BaseModel):
+    ok: bool
+    accepted_taps: int = Field(default=0, ge=0)
+    rejected_taps: int = Field(default=0, ge=0)
+    added_points: int = Field(default=0, ge=0)
+    throttled: bool = False
+    message: str
+    state: ClickerState
+
+
+class ClickerDailyBonusOut(BaseModel):
+    ok: bool
+    added_points: int = Field(default=0, ge=0)
+    message: str
+    state: ClickerState
+
+
+class ClickerReferralApplyIn(BaseModel):
+    referrer_telegram_id: int = Field(gt=0)
+
+
+class ClickerReferralOut(BaseModel):
+    ok: bool
+    message: str
+    state: ClickerState
+
+
+class ClickerLotteryOut(BaseModel):
+    ok: bool
+    message: str
+    entered_at: datetime | None = None
+    state: ClickerState
+
+
+class ClickerLeaderboardItem(BaseModel):
+    rank: int = Field(ge=1)
+    uid: str
+    telegram_user_id: int | None = None
+    display_name: str
+    points: int = Field(ge=0)
+    level: int = Field(ge=1)
+    referrals: int = Field(ge=0)
+    updated_at: datetime
+
+
+class ClickerLeaderboardOut(BaseModel):
+    ok: bool = True
+    items: list[ClickerLeaderboardItem]
+    updated_at: datetime
+
+
+class ClickerLotteryEntry(BaseModel):
+    uid: str
+    telegram_user_id: int | None = None
+    display_name: str
+    points: int = Field(ge=0)
+    level: int = Field(ge=1)
+    entered_at: datetime
+
+
+class ClickerLotteryAdminOut(BaseModel):
+    ok: bool = True
+    entries: list[ClickerLotteryEntry]
