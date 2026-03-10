@@ -202,8 +202,8 @@ cython_debug/
 .cursorindexingignore
 
 # Keep frontend source lib tracked for this repository.
-!/lib/
-!/lib/**
+!/frontend/lib/
+!/frontend/lib/**
 
 # Marimo
 marimo/_static/
