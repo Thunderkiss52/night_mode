@@ -1,0 +1,85 @@
+{
+  "nav": {
+    "home": "Home",
+    "map": "Map",
+    "profile": "Profile",
+    "competitions": "Clicker",
+    "qr": "QR",
+    "story": "Story"
+  },
+  "home": {
+    "title": "Night mode: the world of the night community",
+    "subtitle": "Charge up with the energy of the night and the best people around the world.",
+    "cta": "Join the family",
+    "mapTitle": "Night Mode family map",
+    "tiles": [
+      {
+        "title": "People",
+        "text": "Logo placeholders stay here for now, and real community photos can replace them later."
+      },
+      {
+        "title": "Energy",
+        "text": "Every block is built to feel dark, sharp, and ready to pull people deeper into the brand."
+      },
+      {
+        "title": "Movement",
+        "text": "Story, map, and clicker already work as the first step before users move into Telegram."
+      }
+    ]
+  },
+  "story": {
+    "title": "The Story of Night Mode 🌙",
+    "paragraphs": [
+      "We live in a world where everyone is expected to be someone all the time.",
+      "To be successful. To be proper. To be convenient.",
+      "During the day we wear masks.",
+      "Work, study, social expectations, other people's rules.",
+      "But there is a time when everything changes.",
+      "Night.",
+      "At night people become real.",
+      "At night ideas, dreams, and honest thoughts appear.",
+      "At night you are left alone with yourself.",
+      "Night Mode is a state.",
+      "It is the moment when you switch off the noise of the world and switch on yourself.",
+      "We created Night Mode not simply as a clothing brand.",
+      "It is a sign for those who feel they do not want to live by someone else's script.",
+      "For those who are searching for their own path.",
+      "For those who feel there is something bigger inside them.",
+      "Every person who puts on Night Mode becomes part of the system.",
+      "Our website shows everyone who has entered Night Mode.",
+      "These are not just customers. They are members of the movement.",
+      "Everyone has their own profile.",
+      "Everyone can show themselves.",
+      "You can take part, climb the ranking, and become visible.",
+      "Those who stay active move into the upper layer of the community.",
+      "That is where real meetups, events, and private experiences happen.",
+      "Night Mode is a place where people begin to find their own people.",
+      "We believe every person has hidden potential.",
+      "But most people never unlock it because they are afraid to step out of the system.",
+      "Night Mode is a different mode of life."
+    ],
+    "listTitle": "A mode where:",
+    "points": [
+      "you express yourself",
+      "you become visible",
+      "you find your circle",
+      "you create a new reality"
+    ],
+    "outro": "Sometimes all it takes is to switch the mode. Welcome to Night Mode."
+  },
+  "map": {
+    "title": "Night Mode family map",
+    "subtitle": "Mark your point, see who is nearby, and grow one shared night community."
+  },
+  "profile": {
+    "title": "Member profile"
+  },
+  "competitions": {
+    "title": "Clicker challenge",
+    "subtitle": "Warm up your fingers and collect rewards. The full release lives in Telegram."
+  },
+  "qr": {
+    "title": "QR and merch binding",
+    "subtitle": "Scan via browser camera and bind items to your profile."
+  }
+}

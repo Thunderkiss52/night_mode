@@ -14,14 +14,14 @@
 3. Verify `/health` and `/docs`.
 
 ### Frontend (Vercel/Render)
-1. Deploy project root.
+1. Deploy `frontend/` or use `frontend/Dockerfile`.
 2. Set `NEXT_PUBLIC_API_BASE_URL=https://<backend-domain>`.
 3. Set all `NEXT_PUBLIC_FIREBASE_*` and `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
 4. Verify pages: map/profile/qr/competitions.
 
 ## Option B: Single VPS with Docker Compose
 1. Copy env templates:
-   - `cp .env.deploy.example .env`
+   - `cp frontend/.env.deploy.example .env`
    - `cp backend/.env.example backend/.env`
 2. Fill `.env` (frontend public vars) and `backend/.env` (JWT/Firebase secrets).
 3. Run:

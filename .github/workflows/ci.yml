@@ -14,7 +14,9 @@ jobs:
         with:
           node-version: '20'
       - run: npm install
+        working-directory: frontend
       - run: npm run typecheck
+        working-directory: frontend
 
   backend:
     runs-on: ubuntu-latest

@@ -11,7 +11,7 @@ MVP-платформа бренда одежды Night Mode: карта поль
 Подробно: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Структура проекта
-- `app`, `components`, `lib`: UI и frontend слой
+- `frontend/app`, `frontend/components`, `frontend/lib`: UI и frontend слой
 - `backend/app/core`: конфиг, JWT security, DI container
 - `backend/app/domain`: схемы и контракты
 - `backend/app/infrastructure`: firebase и репозитории
@@ -22,10 +22,11 @@ MVP-платформа бренда одежды Night Mode: карта поль
 ## Локальный запуск (split mode)
 
 ### Frontend
-1. `npm install`
-2. `cp .env.example .env.local`
-3. Заполните `.env.local`
-4. `npm run dev:web`
+1. `cd frontend`
+2. `npm install`
+3. `cp .env.example .env.local`
+4. Заполните `.env.local`
+5. `npm run dev:web`
 
 ### Backend
 1. `cd backend`
@@ -36,7 +37,7 @@ MVP-платформа бренда одежды Night Mode: карта поль
 6. `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
 
 ## Локальный запуск (single host Docker)
-1. `cp .env.deploy.example .env`
+1. `cp frontend/.env.deploy.example .env`
 2. `cp backend/.env.example backend/.env`
 3. Заполните `.env` (frontend public vars) и `backend/.env` (backend secrets)
 4. `docker compose up --build -d`
@@ -89,8 +90,8 @@ Frontend `.env.local`:
 - Full guide: [docs/DEPLOY.md](docs/DEPLOY.md)
 
 ## Команды
-- `npm run dev:web`
-- `npm run dev:api`
-- `npm run dev:bot`
-- `npm run docker:up`
-- `npm run docker:down`
+- `make dev-web`
+- `make dev-api`
+- `make dev-bot`
+- `make docker-up`
+- `make docker-down`

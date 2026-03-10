@@ -5,7 +5,7 @@
 2. Install capacitor inside this repo:
    - `npm i @capacitor/core @capacitor/cli @capacitor/android @capacitor/ios`
    - `npx cap init night-mode com.nightmode.app --web-dir=.next`
-3. Build web app: `npm run build`.
+3. Build web app: `cd ../frontend && npm run build`.
 4. Add platforms:
    - `npx cap add android`
    - `npx cap add ios`

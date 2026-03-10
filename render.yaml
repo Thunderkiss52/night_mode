@@ -22,7 +22,7 @@ services:
   - type: web
     name: night-mode-web
     env: docker
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: ./frontend/Dockerfile
     plan: free
     envVars:
       - key: NEXT_PUBLIC_API_BASE_URL

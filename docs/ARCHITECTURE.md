@@ -1,7 +1,7 @@
 # Architecture
 
 ## Overview
-- `app/`: Next.js UI (presentation layer)
+- `frontend/app/`: Next.js UI (presentation layer)
 - `backend/app/core`: configuration, security, DI container
 - `backend/app/domain`: request/response and domain schemas
 - `backend/app/infrastructure`: Firebase adapter + repositories + in-memory store
