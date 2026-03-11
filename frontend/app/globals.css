@@ -8,6 +8,8 @@
   --bg-2: #111111;
   --line-soft: rgba(255, 255, 255, 0.03);
   --line-hard: rgba(0, 0, 0, 0.82);
+  --stripe-light: rgba(255, 255, 255, 0.04);
+  --stripe-dark: rgba(0, 0, 0, 0.22);
   --gold-0: #d4af37;
   --gold-1: #e6c459;
 }
@@ -32,11 +34,13 @@ body {
   background-image:
     radial-gradient(circle at top, rgba(255, 255, 255, 0.05), transparent 30%),
     repeating-linear-gradient(
-      to bottom,
-      rgba(255, 255, 255, 0.015) 0,
-      rgba(255, 255, 255, 0.015) 44px,
-      rgba(0, 0, 0, 0.82) 44px,
-      rgba(0, 0, 0, 0.82) 56px
+      135deg,
+      var(--stripe-light) 0,
+      var(--stripe-light) 14px,
+      transparent 14px,
+      transparent 42px,
+      var(--stripe-dark) 42px,
+      var(--stripe-dark) 56px
     ),
     linear-gradient(180deg, var(--bg-0) 0%, var(--bg-2) 100%);
 }
@@ -49,6 +53,15 @@ a {
 .nm-card {
   border: 1px solid rgba(255, 255, 255, 0.08);
   background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.03) 0,
+      rgba(255, 255, 255, 0.03) 12px,
+      transparent 12px,
+      transparent 30px,
+      rgba(0, 0, 0, 0.2) 30px,
+      rgba(0, 0, 0, 0.2) 40px
+    ),
     linear-gradient(180deg, rgba(14, 14, 14, 0.94) 0%, rgba(6, 6, 6, 0.92) 100%);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(12px);
@@ -94,11 +107,13 @@ a {
 .nm-line-panel {
   background:
     repeating-linear-gradient(
-      to bottom,
-      rgba(255, 255, 255, 0.015) 0,
-      rgba(255, 255, 255, 0.015) 34px,
-      rgba(0, 0, 0, 0.72) 34px,
-      rgba(0, 0, 0, 0.72) 42px
+      135deg,
+      rgba(255, 255, 255, 0.04) 0,
+      rgba(255, 255, 255, 0.04) 12px,
+      transparent 12px,
+      transparent 30px,
+      rgba(0, 0, 0, 0.22) 30px,
+      rgba(0, 0, 0, 0.22) 40px
     ),
     linear-gradient(180deg, rgba(8, 8, 8, 0.96) 0%, rgba(3, 3, 3, 0.98) 100%);
 }
