@@ -29,7 +29,7 @@ services:
       - ./backend/.env
     environment:
       APP_ENV: production
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://night_mode:night_mode@db:5432/night_mode}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-night_mode}:${POSTGRES_PASSWORD:-night_mode}@db:5432/${POSTGRES_DB:-night_mode}
     ports:
       - '${BACKEND_HOST_BIND:-127.0.0.1}:${BACKEND_HOST_PORT:-8000}:8000'
     restart: unless-stopped
