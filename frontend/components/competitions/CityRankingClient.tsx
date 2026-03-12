@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import CityRankingTable from '@/components/competitions/CityRankingTable';
 import { apiUrl } from '@/lib/api';
-import { demoCityRanking } from '@/lib/mock-data';
 import type { CityRanking } from '@/lib/types';
 
 type RankingApiItem = {
@@ -23,7 +22,7 @@ function fromApiRanking(item: RankingApiItem): CityRanking {
 }
 
 export default function CityRankingClient() {
-  const [ranking, setRanking] = useState<CityRanking[]>(demoCityRanking);
+  const [ranking, setRanking] = useState<CityRanking[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -37,9 +36,7 @@ export default function CityRankingClient() {
         if (!active || !data.ranking) return;
 
         setRanking(data.ranking.map(fromApiRanking));
-      } catch {
-        // Keep demo ranking.
-      }
+      } catch {}
     }
 
     loadRanking();

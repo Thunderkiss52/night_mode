@@ -7,7 +7,8 @@
 - Домен (например `nightmode.example.com`)
 - Доступ по SSH
 - Git-репозиторий с проектом
-- Firebase проект и ключи (`NEXT_PUBLIC_FIREBASE_*`, service account)
+- PostgreSQL credentials
+- Telegram bot token
 
 ## 2. Подготовка сервера
 
@@ -34,24 +35,30 @@ cd /opt/night_mode
 ## 4. Создание env-файлов
 
 ```bash
-cp .env.deploy.example .env
+cp .env.example .env
 cp backend/.env.example backend/.env
 ```
 
 ## 5. Заполнение переменных
 
-### 5.1 Файл `.env` (frontend build args)
+### 5.1 Файл `.env` (compose + frontend public vars)
 
 ```dotenv
+POSTGRES_DB=night_mode
+POSTGRES_USER=night_mode
+POSTGRES_PASSWORD=<STRONG_DB_PASSWORD>
+POSTGRES_HOST_BIND=127.0.0.1
+POSTGRES_HOST_PORT=5434
+
+BACKEND_HOST_BIND=127.0.0.1
+BACKEND_HOST_PORT=8000
+
+GATEWAY_HOST_BIND=0.0.0.0
+GATEWAY_HOST_PORT=80
+
 NEXT_PUBLIC_API_BASE_URL=
-NEXT_PUBLIC_FIREBASE_API_KEY=...
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
-NEXT_PUBLIC_FIREBASE_APP_ID=...
-NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=...
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=...
+NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=...
 ```
 
 Примечание: для single-host через nginx gateway оставляйте `NEXT_PUBLIC_API_BASE_URL` пустым.
@@ -66,14 +73,14 @@ APP_PORT=8000
 CORS_ORIGINS=https://nightmode.example.com
 
 AUTH_MODE=required
+DATABASE_URL=postgresql+psycopg://night_mode:<PASSWORD>@db:5432/night_mode
 JWT_SECRET=<GENERATE_STRONG_SECRET>
 JWT_ALGORITHM=HS256
-JWT_EXPIRE_MINUTES=120
-
-USE_FIREBASE=true
-FIREBASE_PROJECT_ID=...
-FIREBASE_SERVICE_ACCOUNT_FILE=
-FIREBASE_SERVICE_ACCOUNT_JSON={...json...}
+JWT_EXPIRE_MINUTES=15
+JWT_REFRESH_EXPIRE_DAYS=30
+TELEGRAM_BOT_TOKEN=<BOT_TOKEN>
+TELEGRAM_BOT_USERNAME=<BOT_USERNAME>
+TELEGRAM_WEBAPP_URL=https://nightmode.example.com/competitions
 ```
 
 ## 6. Первый запуск
@@ -174,9 +181,10 @@ curl -I http://127.0.0.1/health
 - `APP_ENV=production`
 - `AUTH_MODE=required`
 - Сильный `JWT_SECRET` (не меньше 32 символов)
+- Сильный пароль PostgreSQL
 - Точный `CORS_ORIGINS` (только ваш домен)
 - Не хранить секреты в git
-- Регулярная ротация Firebase service account ключей
+- Регулярная ротация Telegram bot token и refresh sessions
 
 ## 13. Автозапуск после перезагрузки
 

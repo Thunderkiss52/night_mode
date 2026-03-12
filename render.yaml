@@ -10,13 +10,15 @@ services:
         value: production
       - key: AUTH_MODE
         value: required
-      - key: USE_FIREBASE
-        value: true
+      - key: DATABASE_URL
+        sync: false
       - key: JWT_SECRET
         sync: false
-      - key: FIREBASE_PROJECT_ID
+      - key: JWT_REFRESH_EXPIRE_DAYS
+        value: 30
+      - key: TELEGRAM_BOT_TOKEN
         sync: false
-      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+      - key: TELEGRAM_BOT_USERNAME
         sync: false
 
   - type: web

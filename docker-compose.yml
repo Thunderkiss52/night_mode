@@ -1,15 +1,37 @@
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: night_mode_db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-night_mode}
+      POSTGRES_USER: ${POSTGRES_USER:-night_mode}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-night_mode}
+    ports:
+      - '${POSTGRES_HOST_BIND:-127.0.0.1}:${POSTGRES_HOST_PORT:-5434}:5432'
+    volumes:
+      - night_mode_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-night_mode} -d ${POSTGRES_DB:-night_mode}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
     container_name: night_mode_backend
+    depends_on:
+      db:
+        condition: service_healthy
     env_file:
       - ./backend/.env
     environment:
       APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://night_mode:night_mode@db:5432/night_mode}
     ports:
-      - '${BACKEND_HOST_PORT:-8000}:8000'
+      - '${BACKEND_HOST_BIND:-127.0.0.1}:${BACKEND_HOST_PORT:-8000}:8000'
     restart: unless-stopped
 
   frontend:
@@ -18,14 +40,8 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-}
-        NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY:-}
-        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}
-        NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
-        NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:-}
-        NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:-}
-        NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID:-}
-        NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: ${NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID:-}
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-}
+        NEXT_PUBLIC_TELEGRAM_BOT_USERNAME: ${NEXT_PUBLIC_TELEGRAM_BOT_USERNAME:-}
     container_name: night_mode_frontend
     environment:
       NODE_ENV: production
@@ -37,10 +53,15 @@ services:
     image: nginx:1.27-alpine
     container_name: night_mode_gateway
     depends_on:
-      - frontend
-      - backend
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
     ports:
-      - '80:80'
+      - '${GATEWAY_HOST_BIND:-0.0.0.0}:${GATEWAY_HOST_PORT:-80}:80'
     volumes:
       - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped
+
+volumes:
+  night_mode_postgres:

@@ -15,14 +15,22 @@ export default function CityRankingTable({ ranking }: { ranking: CityRanking[] }
             </tr>
           </thead>
           <tbody>
-            {ranking.slice(0, 10).map((item, idx) => (
-              <tr key={`${item.city}-${item.country}`} className="border-b border-gold-500/10">
-                <td className="py-2">{idx + 1}</td>
-                <td className="py-2">{item.city}</td>
-                <td className="py-2">{item.country}</td>
-                <td className="py-2">{item.countItems}</td>
+            {ranking.length > 0 ? (
+              ranking.slice(0, 10).map((item, idx) => (
+                <tr key={`${item.city}-${item.country}`} className="border-b border-gold-500/10">
+                  <td className="py-2">{idx + 1}</td>
+                  <td className="py-2">{item.city}</td>
+                  <td className="py-2">{item.country}</td>
+                  <td className="py-2">{item.countItems}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={4} className="py-4 text-white/60">
+                  Рейтинг пока пуст или backend недоступен.
+                </td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>

@@ -1,25 +1,22 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
-import { apiUrl } from '@/lib/api';
-import { authHeaders, getStoredApiToken, getStoredApiUid } from '@/lib/auth-client';
-
-type TokenResponse = {
-  access_token: string;
-  expires_in: number;
-  uid: string;
-  email?: string | null;
-};
-
-type MeResponse = {
-  uid: string;
-  email?: string | null;
-};
+import {
+  fetchCurrentUser,
+  getStoredApiToken,
+  getStoredApiUid,
+  getTelegramInitData,
+  loginWithTelegram,
+  logoutSession,
+  refreshAccessToken
+} from '@/lib/auth-client';
 
 export default function AuthSessionPanel() {
-  const [uid, setUid] = useState('demo-user-1');
-  const [email, setEmail] = useState('demo@nightmode.local');
-  const [firebaseIdToken, setFirebaseIdToken] = useState('');
+  const [devTelegramId, setDevTelegramId] = useState('100001');
+  const [username, setUsername] = useState('night_mode_web');
+  const [firstName, setFirstName] = useState('Night');
+  const [lastName, setLastName] = useState('Mode');
+  const [referralCode, setReferralCode] = useState('');
   const [message, setMessage] = useState('');
   const [tokenPreview, setTokenPreview] = useState(() => {
     const token = getStoredApiToken();
@@ -27,53 +24,46 @@ export default function AuthSessionPanel() {
   });
   const [storedUid, setStoredUid] = useState(() => getStoredApiUid());
 
-  const saveToken = (token: string, tokenUid: string) => {
-    window.localStorage.setItem('nm_api_access_token', token);
-    window.localStorage.setItem('nm_api_uid', tokenUid);
-    setTokenPreview(`${token.slice(0, 24)}...`);
-    setStoredUid(tokenUid);
+  const syncPreview = () => {
+    const token = getStoredApiToken();
+    const uid = getStoredApiUid();
+    setTokenPreview(token ? `${token.slice(0, 24)}...` : 'not set');
+    setStoredUid(uid);
   };
 
-  const loginDev = async (e: FormEvent) => {
+  const loginTelegram = async (e: FormEvent) => {
     e.preventDefault();
     setMessage('');
 
     try {
-      const response = await fetch(apiUrl('/api/auth/dev-login'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid, email })
-      });
-      const data = (await response.json()) as TokenResponse | { detail?: string };
-      if (!response.ok || !('access_token' in data)) {
-        setMessage(('detail' in data && data.detail) || 'dev-login failed');
-        return;
-      }
-      saveToken(data.access_token, data.uid);
-      setMessage(`JWT сохранен (uid: ${data.uid})`);
+      const initData = getTelegramInitData();
+      const data = await loginWithTelegram(
+        initData
+          ? { initData, referralCode }
+          : {
+              devTelegramUserId: Number(devTelegramId),
+              referralCode,
+              username,
+              firstName,
+              lastName
+            }
+      );
+      syncPreview();
+      setMessage(`JWT сохранен (user: ${data.user?.id || getStoredApiUid()})`);
     } catch {
-      setMessage('API недоступен');
+      setMessage('Telegram auth failed');
     }
   };
 
-  const loginFirebase = async () => {
+  const refreshSession = async () => {
     setMessage('');
 
     try {
-      const response = await fetch(apiUrl('/api/auth/firebase-login'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ firebase_id_token: firebaseIdToken })
-      });
-      const data = (await response.json()) as TokenResponse | { detail?: string };
-      if (!response.ok || !('access_token' in data)) {
-        setMessage(('detail' in data && data.detail) || 'firebase-login failed');
-        return;
-      }
-      saveToken(data.access_token, data.uid);
-      setMessage(`JWT сохранен (uid: ${data.uid})`);
+      await refreshAccessToken();
+      syncPreview();
+      setMessage('Access token refreshed');
     } catch {
-      setMessage('API недоступен');
+      setMessage('Refresh failed');
     }
   };
 
@@ -81,18 +71,22 @@ export default function AuthSessionPanel() {
     setMessage('');
 
     try {
-      const response = await fetch(apiUrl('/api/auth/me'), {
-        headers: authHeaders()
-      });
-      const data = (await response.json()) as MeResponse | { detail?: string };
-      if (!response.ok || !('uid' in data)) {
-        setMessage(('detail' in data && data.detail) || 'not authenticated');
-        return;
-      }
-      setMessage(`Активная сессия: ${data.uid}`);
-      setStoredUid(data.uid);
+      const user = await fetchCurrentUser();
+      syncPreview();
+      setMessage(`Активная сессия: ${user.id}, баланс: ${user.balance}`);
     } catch {
-      setMessage('API недоступен');
+      setMessage('Current session not available');
+    }
+  };
+
+  const onLogout = async () => {
+    setMessage('');
+    try {
+      await logoutSession();
+      syncPreview();
+      setMessage('Сессия завершена');
+    } catch {
+      setMessage('Logout failed');
     }
   };
 
@@ -102,38 +96,55 @@ export default function AuthSessionPanel() {
       <p className="mt-1 text-xs text-zinc-300">Текущий JWT: {tokenPreview}</p>
       <p className="mt-1 text-xs text-zinc-300">Текущий UID: {storedUid}</p>
 
-      <form className="mt-4 grid gap-2 sm:grid-cols-3" onSubmit={loginDev}>
+      <form className="mt-4 grid gap-2 sm:grid-cols-2" onSubmit={loginTelegram}>
         <input
           className="rounded border border-gold-500/40 bg-black px-3 py-2 text-sm"
-          value={uid}
-          onChange={(e) => setUid(e.target.value)}
-          placeholder="uid"
+          value={devTelegramId}
+          onChange={(e) => setDevTelegramId(e.target.value)}
+          placeholder="dev telegram id"
         />
         <input
           className="rounded border border-gold-500/40 bg-black px-3 py-2 text-sm"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="email"
+          value={referralCode}
+          onChange={(e) => setReferralCode(e.target.value)}
+          placeholder="referral code"
         />
-        <button className="rounded bg-gold-500 px-4 py-2 font-semibold text-black">Dev Login</button>
+        <input
+          className="rounded border border-gold-500/40 bg-black px-3 py-2 text-sm"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="username"
+        />
+        <input
+          className="rounded border border-gold-500/40 bg-black px-3 py-2 text-sm"
+          value={firstName}
+          onChange={(e) => setFirstName(e.target.value)}
+          placeholder="first name"
+        />
+        <input
+          className="rounded border border-gold-500/40 bg-black px-3 py-2 text-sm"
+          value={lastName}
+          onChange={(e) => setLastName(e.target.value)}
+          placeholder="last name"
+        />
+        <button className="rounded bg-gold-500 px-4 py-2 font-semibold text-black">Telegram Login</button>
       </form>
 
-      <div className="mt-3 flex flex-col gap-2">
-        <textarea
-          className="min-h-20 rounded border border-gold-500/40 bg-black px-3 py-2 text-xs"
-          value={firebaseIdToken}
-          onChange={(e) => setFirebaseIdToken(e.target.value)}
-          placeholder="Firebase ID token"
-        />
-        <div className="flex flex-wrap gap-2">
-          <button onClick={loginFirebase} className="rounded border border-gold-500/60 px-3 py-2 text-sm text-gold-400">
-            Firebase Login
-          </button>
-          <button onClick={checkSession} className="rounded border border-gold-500/60 px-3 py-2 text-sm text-gold-400">
-            Check Session
-          </button>
-        </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button onClick={refreshSession} className="rounded border border-gold-500/60 px-3 py-2 text-sm text-gold-400">
+          Refresh
+        </button>
+        <button onClick={checkSession} className="rounded border border-gold-500/60 px-3 py-2 text-sm text-gold-400">
+          Check Session
+        </button>
+        <button onClick={onLogout} className="rounded border border-white/20 px-3 py-2 text-sm text-white/80">
+          Logout
+        </button>
       </div>
+
+      <p className="mt-3 text-xs text-white/50">
+        В Telegram используется `window.Telegram.WebApp.initData`, локально доступен dev fallback через `dev_telegram_id`.
+      </p>
 
       {message ? <p className="mt-3 text-sm text-gold-400">{message}</p> : null}
     </section>

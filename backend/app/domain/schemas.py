@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -9,6 +10,225 @@ class HealthOut(BaseModel):
     ok: bool = True
     service: str
     timestamp: datetime
+
+
+class UserProfile(BaseModel):
+    id: str
+    telegram_id: int | None = None
+    email: str | None = None
+    referral_code: str
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    photo_url: str | None = None
+    language_code: str | None = None
+    role: str
+    is_active: bool
+    is_admin: bool
+    balance: int = 0
+    last_login_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AuthTelegramIn(BaseModel):
+    init_data: str | None = Field(default=None, min_length=10)
+    referral_code: str | None = Field(default=None, min_length=4, max_length=32)
+    dev_telegram_user_id: int | None = Field(default=None, gt=0)
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    photo_url: str | None = None
+    language_code: str | None = None
+
+
+class AuthRefreshIn(BaseModel):
+    refresh_token: str | None = Field(default=None, min_length=20)
+
+
+class AuthLogoutIn(BaseModel):
+    refresh_token: str | None = Field(default=None, min_length=20)
+    session_id: str | None = None
+
+
+class AuthTokenOut(BaseModel):
+    ok: bool = True
+    access_token: str
+    refresh_token: str
+    token_type: str = 'bearer'
+    expires_in: int
+    refresh_expires_in: int
+    user: UserProfile
+
+
+class AccessTokenOut(BaseModel):
+    ok: bool = True
+    access_token: str
+    refresh_token: str
+    token_type: str = 'bearer'
+    expires_in: int
+    refresh_expires_in: int
+
+
+class CurrentUserOut(BaseModel):
+    ok: bool = True
+    user: UserProfile
+
+
+class UpdateProfileIn(BaseModel):
+    username: str | None = Field(default=None, max_length=255)
+    first_name: str | None = Field(default=None, max_length=255)
+    last_name: str | None = Field(default=None, max_length=255)
+    photo_url: str | None = Field(default=None, max_length=2048)
+    language_code: str | None = Field(default=None, max_length=32)
+
+
+class UserProfileOut(BaseModel):
+    ok: bool = True
+    user: UserProfile
+
+
+class BalanceOut(BaseModel):
+    ok: bool = True
+    balance: int
+    updated_at: datetime
+
+
+class BalanceTransactionItem(BaseModel):
+    id: str
+    type: str
+    direction: str
+    amount: int
+    source: str
+    meta: dict[str, Any] | None = None
+    created_at: datetime
+
+
+class WalletTransactionsOut(BaseModel):
+    ok: bool = True
+    items: list[BalanceTransactionItem]
+
+
+class DailyBonusOut(BaseModel):
+    ok: bool
+    added_amount: int = 0
+    balance: int
+    reward_date: date | None = None
+    message: str
+
+
+class ReferralApplyIn(BaseModel):
+    referral_code: str | None = Field(default=None, min_length=4, max_length=32)
+    referrer_telegram_id: int | None = Field(default=None, gt=0)
+
+
+class ReferralItem(BaseModel):
+    user_id: str
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    created_at: datetime
+
+
+class ReferralsOut(BaseModel):
+    ok: bool = True
+    my_referral_code: str
+    referred_by_user_id: str | None = None
+    referrals_count: int
+    items: list[ReferralItem]
+
+
+class ReferralApplyOut(BaseModel):
+    ok: bool
+    message: str
+    balance: int
+
+
+class CompetitionItem(BaseModel):
+    id: str
+    title: str
+    description: str | None = None
+    status: str
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CompetitionsOut(BaseModel):
+    ok: bool = True
+    items: list[CompetitionItem]
+
+
+class CompetitionOut(BaseModel):
+    ok: bool = True
+    item: CompetitionItem
+
+
+class CompetitionLeaderboardItem(BaseModel):
+    rank: int
+    user_id: str
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    score: int
+    updated_at: datetime
+
+
+class CompetitionLeaderboardOut(BaseModel):
+    ok: bool = True
+    items: list[CompetitionLeaderboardItem]
+
+
+class AdminUserItem(BaseModel):
+    id: str
+    telegram_id: int | None = None
+    email: str | None = None
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    role: str
+    is_active: bool
+    is_admin: bool
+    balance: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminUsersOut(BaseModel):
+    ok: bool = True
+    items: list[AdminUserItem]
+
+
+class AdminUserOut(BaseModel):
+    ok: bool = True
+    item: AdminUserItem
+
+
+class AdminAdjustBalanceIn(BaseModel):
+    amount: int = Field(ne=0)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class AdminAdjustBalanceOut(BaseModel):
+    ok: bool = True
+    balance: int
+    transaction_id: str
+
+
+class AdminAuditLogItem(BaseModel):
+    id: str
+    admin_user_id: str | None = None
+    target_user_id: str | None = None
+    action: str
+    old_data: dict[str, Any] | None = None
+    new_data: dict[str, Any] | None = None
+    created_at: datetime
+
+
+class AdminAuditLogsOut(BaseModel):
+    ok: bool = True
+    items: list[AdminAuditLogItem]
 
 
 class UserLocation(BaseModel):
@@ -68,30 +288,6 @@ class QrBindOut(BaseModel):
     secure_hash: str | None = None
 
 
-class FirebaseLoginIn(BaseModel):
-    firebase_id_token: str = Field(min_length=20)
-
-
-class DevLoginIn(BaseModel):
-    uid: str = Field(min_length=2)
-    email: str | None = None
-
-
-class AuthTokenOut(BaseModel):
-    ok: bool = True
-    access_token: str
-    token_type: str = 'bearer'
-    expires_in: int
-    uid: str
-    email: str | None = None
-
-
-class CurrentUserOut(BaseModel):
-    ok: bool = True
-    uid: str
-    email: str | None = None
-
-
 class ClickerState(BaseModel):
     uid: str
     telegram_user_id: int | None = None
@@ -117,14 +313,6 @@ class ClickerState(BaseModel):
 class ClickerStateOut(BaseModel):
     ok: bool = True
     state: ClickerState
-
-
-class ClickerAuthTelegramIn(BaseModel):
-    init_data: str | None = Field(default=None, min_length=10)
-    dev_telegram_user_id: int | None = Field(default=None, gt=0)
-    username: str | None = None
-    first_name: str | None = None
-    last_name: str | None = None
 
 
 class ClickerAuthOut(BaseModel):
@@ -156,10 +344,6 @@ class ClickerDailyBonusOut(BaseModel):
     added_points: int = Field(default=0, ge=0)
     message: str
     state: ClickerState
-
-
-class ClickerReferralApplyIn(BaseModel):
-    referrer_telegram_id: int = Field(gt=0)
 
 
 class ClickerReferralOut(BaseModel):

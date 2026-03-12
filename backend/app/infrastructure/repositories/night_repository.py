@@ -1,25 +1,56 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from uuid import uuid4
+
+from fastapi import HTTPException, status
+from sqlalchemy import Select, desc, func, select
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.geocoder import ReverseGeocoder
+from app.core.security import (
+    generate_refresh_token,
+    hash_refresh_token,
+)
 from app.domain.schemas import (
+    AdminAdjustBalanceOut,
+    AdminAuditLogItem,
+    AdminUserItem,
+    BalanceTransactionItem,
     CityRankingItem,
     ClickerLeaderboardItem,
     ClickerLotteryEntry,
     ClickerState,
-    QrBindIn,
+    CompetitionItem,
+    CompetitionLeaderboardItem,
+    DailyBonusOut,
+    LocationCreateOut,
+    ReferralApplyOut,
+    ReferralItem,
+    ReferralsOut,
+    UpdateProfileIn,
     UserLocation,
+    UserProfile,
+    UserProfileOut,
     UserLocationCreate,
+    QrBindIn,
 )
-from app.infrastructure.firebase_admin import get_firestore_client
-from app.infrastructure.stores.memory_store import make_qr_hash, store
-
-try:
-    from firebase_admin import firestore
-except Exception:  # pragma: no cover
-    firestore = None
+from app.infrastructure.stores.memory_store import make_qr_hash
+from app.models.entities import (
+    AdminAuditLog,
+    BalanceTransaction,
+    Competition,
+    CompetitionScore,
+    DailyReward,
+    LotteryEntry,
+    QrBinding,
+    Referral,
+    User,
+    UserBalance,
+    UserLocation as UserLocationModel,
+    UserSession,
+)
 
 
 class NightRepository:
@@ -33,106 +64,38 @@ class NightRepository:
         'null',
     }
 
-    def __init__(self) -> None:
-        self.db = get_firestore_client()
+    def __init__(self, db: Session) -> None:
+        self.db = db
         self.geocoder = ReverseGeocoder(settings=settings)
-        self._clicker_users: dict[str, dict] = {}
-        self._lottery_entries: dict[str, dict] = {}
 
-    @property
-    def using_firestore(self) -> bool:
-        return self.db is not None
+    def commit(self) -> None:
+        self.db.commit()
 
-    def list_locations(self) -> list[UserLocation]:
-        if not self.using_firestore:
-            return store.locations
+    def rollback(self) -> None:
+        self.db.rollback()
 
-        docs = (
-            self.db.collection('locations')
-            .order_by('created_at', direction=firestore.Query.DESCENDING)
-            .limit(2000)
-            .stream()
-        )
+    @staticmethod
+    def _now() -> datetime:
+        return datetime.now(timezone.utc)
 
-        result: list[UserLocation] = []
-        for doc in docs:
-            raw = doc.to_dict() or {}
-            created_at = raw.get('created_at')
-            if not isinstance(created_at, datetime):
-                created_at = datetime.now(timezone.utc)
-
-            result.append(
-                UserLocation(
-                    id=str(raw.get('id', doc.id)),
-                    uid=str(raw.get('uid', 'unknown')),
-                    name=str(raw.get('name', 'User')),
-                    city=str(raw.get('city', 'Unknown')),
-                    country=str(raw.get('country', 'Unknown')),
-                    lat=float(raw.get('lat', 0.0)),
-                    lng=float(raw.get('lng', 0.0)),
-                    created_at=created_at,
-                )
-            )
-
-        return result
-
-    def create_location(self, payload: UserLocationCreate) -> UserLocation:
-        city, country = self._resolve_location_details(payload)
-        location = UserLocation(
-            id=f'loc-{int(datetime.now(timezone.utc).timestamp() * 1000)}',
-            uid=payload.uid,
-            name=payload.name,
-            city=city,
-            country=country,
-            lat=payload.lat,
-            lng=payload.lng,
-            created_at=datetime.now(timezone.utc),
-        )
-
-        if not self.using_firestore:
-            store.locations.insert(0, location)
-            return location
-
-        self.db.collection('locations').document(location.id).set(location.model_dump())
-        return location
-
-    def _resolve_location_details(self, payload: UserLocationCreate) -> tuple[str, str]:
-        city = payload.city.strip() if isinstance(payload.city, str) else ''
-        country = payload.country.strip() if isinstance(payload.country, str) else ''
-
-        if not self._is_placeholder(city) and not self._is_placeholder(country):
-            return city, country
-
-        geocoded = self.geocoder.reverse(payload.lat, payload.lng)
-        if not geocoded:
-            return city or 'Unknown', country or 'Unknown'
-
-        resolved_city = geocoded.city if self._is_placeholder(city) and geocoded.city else city
-        resolved_country = geocoded.country if self._is_placeholder(country) and geocoded.country else country
-        return resolved_city or 'Unknown', resolved_country or 'Unknown'
-
-    @classmethod
-    def _is_placeholder(cls, value: str) -> bool:
-        return value.strip().lower() in cls._PLACEHOLDER_VALUES
+    @staticmethod
+    def _utc_day_start(value: date) -> datetime:
+        return datetime.combine(value, time.min, tzinfo=timezone.utc)
 
     @staticmethod
     def build_clicker_uid(telegram_user_id: int) -> str:
         return f'tg:{telegram_user_id}'
 
     @staticmethod
-    def _telegram_id_from_uid(uid: str) -> int | None:
-        if not uid.startswith('tg:'):
-            return None
-        candidate = uid[3:]
-        if not candidate.isdigit():
-            return None
-        return int(candidate)
-
-    @staticmethod
-    def _safe_datetime(value: object) -> datetime | None:
-        if isinstance(value, datetime):
-            return value
-        return None
+    def _display_name(user: User) -> str:
+        full_name = ' '.join(part for part in [user.first_name or '', user.last_name or ''] if part.strip()).strip()
+        if full_name:
+            return full_name
+        if user.username:
+            return f'@{user.username.lstrip("@")}'
+        if user.telegram_id is not None:
+            return f'tg:{user.telegram_id}'
+        return user.id
 
     @staticmethod
     def _points_for_level(level: int) -> int:
@@ -150,309 +113,714 @@ class NightRepository:
 
     @classmethod
     def _next_level_points(cls, level: int) -> int | None:
-        if level < 1:
-            return cls._points_for_level(2)
-        return cls._points_for_level(level + 1)
+        return cls._points_for_level(max(1, level) + 1)
 
-    @staticmethod
-    def _display_name(
-        uid: str,
-        first_name: str | None,
-        last_name: str | None,
-        username: str | None,
-    ) -> str:
-        full_name = ' '.join(part for part in [first_name or '', last_name or ''] if part.strip()).strip()
-        if full_name:
-            return full_name
-        if username:
-            return f'@{username.lstrip("@")}'
-        return uid
+    @classmethod
+    def _is_placeholder(cls, value: str | None) -> bool:
+        return (value or '').strip().lower() in cls._PLACEHOLDER_VALUES
 
-    def _base_clicker_user(
+    def _generate_referral_code(self) -> str:
+        for _ in range(20):
+            candidate = uuid4().hex[:10].upper()
+            exists = self.db.execute(select(User.id).where(User.referral_code == candidate)).scalar_one_or_none()
+            if exists is None:
+                return candidate
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail='Could not generate referral code')
+
+    def _require_user(self, user_id: str) -> User:
+        user = self.db.get(User, user_id)
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='User not found')
+        return user
+
+    def get_user_by_id(self, user_id: str) -> User:
+        return self._require_user(user_id)
+
+    def get_user_by_telegram_id(self, telegram_id: int) -> User | None:
+        return self.db.execute(select(User).where(User.telegram_id == telegram_id)).scalar_one_or_none()
+
+    def get_user_by_email(self, email: str) -> User | None:
+        return self.db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+
+    def get_user_by_referral_code(self, referral_code: str) -> User | None:
+        return self.db.execute(
+            select(User).where(User.referral_code == referral_code.strip().upper())
+        ).scalar_one_or_none()
+
+    def _ensure_balance(self, user_id: str) -> UserBalance:
+        balance = self.db.execute(select(UserBalance).where(UserBalance.user_id == user_id)).scalar_one_or_none()
+        if balance is None:
+            balance = UserBalance(user_id=user_id, balance=0, updated_at=self._now())
+            self.db.add(balance)
+            self.db.flush()
+        return balance
+
+    def get_balance(self, user_id: str) -> UserBalance:
+        self._require_user(user_id)
+        return self._ensure_balance(user_id)
+
+    def _lock_balance(self, user_id: str) -> UserBalance:
+        balance = self.db.execute(
+            select(UserBalance).where(UserBalance.user_id == user_id).with_for_update()
+        ).scalar_one_or_none()
+        if balance is None:
+            balance = UserBalance(user_id=user_id, balance=0, updated_at=self._now())
+            self.db.add(balance)
+            self.db.flush()
+            balance = self.db.execute(
+                select(UserBalance).where(UserBalance.user_id == user_id).with_for_update()
+            ).scalar_one()
+        return balance
+
+    def _record_balance_change(
         self,
-        uid: str,
-        now: datetime,
-        telegram_user_id: int | None = None,
-        username: str | None = None,
-        first_name: str | None = None,
-        last_name: str | None = None,
-    ) -> dict:
-        return {
-            'uid': uid,
-            'telegram_user_id': telegram_user_id,
-            'username': username or None,
-            'first_name': first_name or '',
-            'last_name': last_name or '',
-            'display_name': self._display_name(uid, first_name, last_name, username),
-            'points': 0,
-            'level': 1,
-            'multiplier': 1,
-            'referrals': 0,
-            'referred_by': None,
-            'daily_bonus_claimed_at': None,
-            'lottery_joined': False,
-            'lottery_entered_at': None,
-            'night_mode_unlocked': False,
-            'last_tap_second': 0,
-            'taps_in_second': 0,
-            'created_at': now,
-            'updated_at': now,
-        }
+        user_id: str,
+        amount: int,
+        tx_type: str,
+        direction: str,
+        source: str,
+        meta: dict | None = None,
+    ) -> tuple[UserBalance, BalanceTransaction]:
+        if amount <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Amount must be positive')
 
-    def _normalize_clicker_record(
-        self,
-        raw: dict,
-        uid: str,
-        now: datetime,
-    ) -> dict:
-        telegram_user_id = raw.get('telegram_user_id')
-        if not isinstance(telegram_user_id, int):
-            telegram_user_id = self._telegram_id_from_uid(uid)
+        balance = self._lock_balance(user_id)
+        delta = amount if direction == 'credit' else -amount
+        if direction == 'debit' and balance.balance < amount:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Insufficient balance')
 
-        first_name = raw.get('first_name') if isinstance(raw.get('first_name'), str) else ''
-        last_name = raw.get('last_name') if isinstance(raw.get('last_name'), str) else ''
-        username = raw.get('username') if isinstance(raw.get('username'), str) else None
-        points = int(raw.get('points', 0))
-        level = self._level_from_points(points)
-        referrals = int(raw.get('referrals', 0))
-        referred_by = raw.get('referred_by')
-        if not isinstance(referred_by, int):
-            referred_by = None
+        balance.balance += delta
+        balance.updated_at = self._now()
 
-        created_at = self._safe_datetime(raw.get('created_at')) or now
-        updated_at = self._safe_datetime(raw.get('updated_at')) or now
-        daily_bonus_claimed_at = self._safe_datetime(raw.get('daily_bonus_claimed_at'))
-        lottery_entered_at = self._safe_datetime(raw.get('lottery_entered_at'))
+        tx = BalanceTransaction(
+            user_id=user_id,
+            type=tx_type,
+            amount=amount,
+            direction=direction,
+            source=source,
+            meta=meta,
+            created_at=self._now(),
+        )
+        self.db.add(tx)
+        self.db.flush()
+        return balance, tx
 
-        record = {
-            'uid': uid,
-            'telegram_user_id': telegram_user_id,
-            'username': username,
-            'first_name': first_name,
-            'last_name': last_name,
-            'display_name': self._display_name(uid, first_name, last_name, username),
-            'points': max(0, points),
-            'level': max(1, level),
-            'multiplier': max(1, level),
-            'referrals': max(0, referrals),
-            'referred_by': referred_by,
-            'daily_bonus_claimed_at': daily_bonus_claimed_at,
-            'lottery_joined': bool(raw.get('lottery_joined', False)),
-            'lottery_entered_at': lottery_entered_at,
-            'night_mode_unlocked': bool(raw.get('night_mode_unlocked', False)),
-            'last_tap_second': int(raw.get('last_tap_second', 0)),
-            'taps_in_second': max(0, int(raw.get('taps_in_second', 0))),
-            'created_at': created_at,
-            'updated_at': updated_at,
-        }
-        return record
-
-    def _serialize_clicker_record(self, record: dict) -> dict:
-        return {
-            'uid': record['uid'],
-            'telegram_user_id': record.get('telegram_user_id'),
-            'username': record.get('username'),
-            'first_name': record.get('first_name', ''),
-            'last_name': record.get('last_name', ''),
-            'display_name': record.get('display_name', 'Player'),
-            'points': int(record.get('points', 0)),
-            'level': int(record.get('level', 1)),
-            'multiplier': int(record.get('multiplier', 1)),
-            'referrals': int(record.get('referrals', 0)),
-            'referred_by': record.get('referred_by'),
-            'daily_bonus_claimed_at': record.get('daily_bonus_claimed_at'),
-            'lottery_joined': bool(record.get('lottery_joined', False)),
-            'lottery_entered_at': record.get('lottery_entered_at'),
-            'night_mode_unlocked': bool(record.get('night_mode_unlocked', False)),
-            'last_tap_second': int(record.get('last_tap_second', 0)),
-            'taps_in_second': int(record.get('taps_in_second', 0)),
-            'created_at': record.get('created_at'),
-            'updated_at': record.get('updated_at'),
-        }
-
-    def _save_clicker_record(self, record: dict) -> None:
-        uid = str(record['uid'])
-        if not self.using_firestore:
-            self._clicker_users[uid] = record.copy()
-            return
-
-        payload = self._serialize_clicker_record(record)
-        self.db.collection('users').document(uid).set(payload, merge=True)
-
-    def _upsert_clicker_rating(self, record: dict) -> None:
-        payload = {
-            'uid': record['uid'],
-            'telegram_user_id': record.get('telegram_user_id'),
-            'display_name': record.get('display_name', 'Player'),
-            'points': int(record.get('points', 0)),
-            'level': int(record.get('level', 1)),
-            'referrals': int(record.get('referrals', 0)),
-            'updated_at': record.get('updated_at') or datetime.now(timezone.utc),
-        }
-
-        if not self.using_firestore:
-            return
-
-        self.db.collection('ratings').document(str(record['uid'])).set(payload, merge=True)
-
-    def _fetch_clicker_record(self, uid: str, now: datetime) -> dict | None:
-        if not self.using_firestore:
-            raw = self._clicker_users.get(uid)
-            if raw is None:
-                return None
-            return self._normalize_clicker_record(raw, uid=uid, now=now)
-
-        snapshot = self.db.collection('users').document(uid).get()
-        if not snapshot.exists:
-            return None
-        raw = snapshot.to_dict() or {}
-        return self._normalize_clicker_record(raw, uid=uid, now=now)
-
-    def _get_or_create_clicker_record(
-        self,
-        uid: str,
-        now: datetime,
-        telegram_user_id: int | None = None,
-        username: str | None = None,
-        first_name: str | None = None,
-        last_name: str | None = None,
-    ) -> dict:
-        current = self._fetch_clicker_record(uid=uid, now=now)
-        if current is None:
-            created = self._base_clicker_user(
-                uid=uid,
-                now=now,
-                telegram_user_id=telegram_user_id,
-                username=username,
-                first_name=first_name,
-                last_name=last_name,
-            )
-            self._save_clicker_record(created)
-            self._upsert_clicker_rating(created)
-            return created
-
-        changed = False
-        if telegram_user_id is not None and current.get('telegram_user_id') != telegram_user_id:
-            current['telegram_user_id'] = telegram_user_id
-            changed = True
-        if username is not None and current.get('username') != username:
-            current['username'] = username
-            changed = True
-        if first_name is not None and current.get('first_name') != first_name:
-            current['first_name'] = first_name
-            changed = True
-        if last_name is not None and current.get('last_name') != last_name:
-            current['last_name'] = last_name
-            changed = True
-
-        if changed:
-            current['display_name'] = self._display_name(
-                uid,
-                current.get('first_name'),
-                current.get('last_name'),
-                current.get('username'),
-            )
-            current['updated_at'] = now
-            self._save_clicker_record(current)
-            self._upsert_clicker_rating(current)
-
-        return current
-
-    def _to_clicker_state(self, record: dict, now: datetime) -> ClickerState:
-        daily_claimed_at = self._safe_datetime(record.get('daily_bonus_claimed_at'))
-        next_daily_bonus_at: datetime | None = None
-        daily_bonus_available = True
-        if daily_claimed_at is not None:
-            next_daily_bonus_at = daily_claimed_at + timedelta(days=1)
-            daily_bonus_available = now >= next_daily_bonus_at
-            if daily_bonus_available:
-                next_daily_bonus_at = None
-
-        level = int(record.get('level', 1))
-        return ClickerState(
-            uid=str(record.get('uid', 'unknown')),
-            telegram_user_id=record.get('telegram_user_id'),
-            username=record.get('username'),
-            display_name=str(record.get('display_name', 'Player')),
-            points=max(0, int(record.get('points', 0))),
-            level=max(1, level),
-            multiplier=max(1, int(record.get('multiplier', level))),
-            referrals=max(0, int(record.get('referrals', 0))),
-            referred_by=record.get('referred_by'),
-            daily_bonus_available=daily_bonus_available,
-            daily_bonus_claimed_at=daily_claimed_at,
-            next_daily_bonus_at=next_daily_bonus_at,
-            lottery_joined=bool(record.get('lottery_joined', False)),
-            lottery_entered_at=self._safe_datetime(record.get('lottery_entered_at')),
-            night_mode_unlocked=bool(record.get('night_mode_unlocked', False)),
-            taps_in_current_second=max(0, int(record.get('taps_in_second', 0))),
-            level_start_points=self._points_for_level(level),
-            next_level_points=self._next_level_points(level),
-            updated_at=self._safe_datetime(record.get('updated_at')) or now,
+    def build_user_profile(self, user: User) -> UserProfile:
+        balance = self.get_balance(user.id)
+        return UserProfile(
+            id=user.id,
+            telegram_id=user.telegram_id,
+            email=user.email,
+            referral_code=user.referral_code,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            photo_url=user.photo_url,
+            language_code=user.language_code,
+            role=user.role,
+            is_active=user.is_active,
+            is_admin=user.is_admin,
+            balance=balance.balance,
+            last_login_at=user.last_login_at,
+            created_at=user.created_at,
+            updated_at=user.updated_at,
         )
 
-    def upsert_clicker_user(
+    def update_user_profile(self, user: User, payload: UpdateProfileIn) -> User:
+        if payload.username is not None:
+            user.username = payload.username or None
+        if payload.first_name is not None:
+            user.first_name = payload.first_name or None
+        if payload.last_name is not None:
+            user.last_name = payload.last_name or None
+        if payload.photo_url is not None:
+            user.photo_url = payload.photo_url or None
+        if payload.language_code is not None:
+            user.language_code = payload.language_code or None
+        user.updated_at = self._now()
+        self.db.flush()
+        return user
+
+    def upsert_telegram_user(
         self,
         telegram_user_id: int,
         username: str | None = None,
         first_name: str | None = None,
         last_name: str | None = None,
-    ) -> ClickerState:
-        now = datetime.now(timezone.utc)
-        uid = self.build_clicker_uid(telegram_user_id)
-        record = self._get_or_create_clicker_record(
-            uid=uid,
-            now=now,
-            telegram_user_id=telegram_user_id,
-            username=username,
-            first_name=first_name,
-            last_name=last_name,
+        photo_url: str | None = None,
+        language_code: str | None = None,
+    ) -> tuple[User, bool]:
+        now = self._now()
+        user = self.get_user_by_telegram_id(telegram_user_id)
+        created = False
+
+        if user is None:
+            user = User(
+                telegram_id=telegram_user_id,
+                username=username,
+                first_name=first_name,
+                last_name=last_name,
+                photo_url=photo_url,
+                language_code=language_code,
+                role='user',
+                is_active=True,
+                is_admin=False,
+                referral_code=self._generate_referral_code(),
+                last_login_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+            self.db.add(user)
+            self.db.flush()
+            self._ensure_balance(user.id)
+            created = True
+        else:
+            user.username = username if username is not None else user.username
+            user.first_name = first_name if first_name is not None else user.first_name
+            user.last_name = last_name if last_name is not None else user.last_name
+            user.photo_url = photo_url if photo_url is not None else user.photo_url
+            user.language_code = language_code if language_code is not None else user.language_code
+            user.last_login_at = now
+            user.updated_at = now
+
+        self.db.flush()
+        return user, created
+
+    def create_refresh_session(
+        self,
+        user_id: str,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
+    ) -> tuple[str, int]:
+        token = generate_refresh_token()
+        expires_at = self._now() + timedelta(days=settings.jwt_refresh_expire_days)
+        session = UserSession(
+            user_id=user_id,
+            token_hash=hash_refresh_token(token),
+            user_agent=user_agent,
+            ip_address=ip_address,
+            is_revoked=False,
+            expires_at=expires_at,
+            created_at=self._now(),
         )
-        return self._to_clicker_state(record, now=now)
+        self.db.add(session)
+        self.db.flush()
+        ttl = int((expires_at - self._now()).total_seconds())
+        return token, ttl
 
-    def get_clicker_state(self, uid: str) -> ClickerState:
-        now = datetime.now(timezone.utc)
-        telegram_user_id = self._telegram_id_from_uid(uid)
-        record = self._get_or_create_clicker_record(
-            uid=uid,
-            now=now,
-            telegram_user_id=telegram_user_id,
+    def _get_session_by_refresh_token(self, refresh_token: str) -> UserSession:
+        session = self.db.execute(
+            select(UserSession).where(UserSession.token_hash == hash_refresh_token(refresh_token))
+        ).scalar_one_or_none()
+        if session is None or session.is_revoked or session.expires_at <= self._now():
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Refresh token is invalid or expired')
+        return session
+
+    def rotate_refresh_session(
+        self,
+        refresh_token: str,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
+    ) -> tuple[User, str, int]:
+        session = self._get_session_by_refresh_token(refresh_token)
+        session.is_revoked = True
+        session.revoked_at = self._now()
+        user = self._require_user(session.user_id)
+        new_token, ttl = self.create_refresh_session(user.id, user_agent=user_agent, ip_address=ip_address)
+        self.db.flush()
+        return user, new_token, ttl
+
+    def revoke_refresh_session(
+        self,
+        refresh_token: str | None = None,
+        session_id: str | None = None,
+        user_id: str | None = None,
+    ) -> None:
+        session: UserSession | None = None
+        if refresh_token:
+            session = self.db.execute(
+                select(UserSession).where(UserSession.token_hash == hash_refresh_token(refresh_token))
+            ).scalar_one_or_none()
+        elif session_id:
+            session = self.db.get(UserSession, session_id)
+
+        if session is None:
+            return
+        if user_id is not None and session.user_id != user_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Session does not belong to user')
+
+        session.is_revoked = True
+        session.revoked_at = self._now()
+        self.db.flush()
+
+    def list_transactions(self, user_id: str, limit: int = 50) -> list[BalanceTransactionItem]:
+        rows = self.db.execute(
+            select(BalanceTransaction)
+            .where(BalanceTransaction.user_id == user_id)
+            .order_by(BalanceTransaction.created_at.desc())
+            .limit(max(1, min(limit, 200)))
+        ).scalars().all()
+
+        return [
+            BalanceTransactionItem(
+                id=row.id,
+                type=row.type,
+                direction=row.direction,
+                amount=row.amount,
+                source=row.source,
+                meta=row.meta,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
+    def _resolve_referrer(
+        self,
+        referral_code: str | None = None,
+        referrer_telegram_id: int | None = None,
+    ) -> User:
+        referrer: User | None = None
+        if referral_code:
+            referrer = self.get_user_by_referral_code(referral_code)
+        elif referrer_telegram_id is not None:
+            referrer = self.get_user_by_telegram_id(referrer_telegram_id)
+
+        if referrer is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Referrer not found')
+        return referrer
+
+    def apply_referral(
+        self,
+        user_id: str,
+        referral_code: str | None = None,
+        referrer_telegram_id: int | None = None,
+        source: str | None = None,
+    ) -> ReferralApplyOut:
+        user = self._require_user(user_id)
+        existing = self.db.execute(select(Referral).where(Referral.referred_user_id == user_id)).scalar_one_or_none()
+        if existing is not None:
+            balance = self.get_balance(user_id)
+            return ReferralApplyOut(ok=False, message='Referral already applied.', balance=balance.balance)
+
+        referrer = self._resolve_referrer(referral_code=referral_code, referrer_telegram_id=referrer_telegram_id)
+        if referrer.id == user.id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Self-referral is not allowed')
+
+        referral = Referral(
+            referrer_user_id=referrer.id,
+            referred_user_id=user.id,
+            source=source,
+            created_at=self._now(),
         )
-        return self._to_clicker_state(record, now=now)
+        self.db.add(referral)
+        if settings.referral_bonus_referrer > 0:
+            self._record_balance_change(
+                user_id=referrer.id,
+                amount=settings.referral_bonus_referrer,
+                tx_type='referral_bonus',
+                direction='credit',
+                source='referral',
+                meta={'referred_user_id': user.id},
+            )
+        balance = self.get_balance(user.id)
+        if settings.referral_bonus_referred > 0:
+            balance, _ = self._record_balance_change(
+                user_id=user.id,
+                amount=settings.referral_bonus_referred,
+                tx_type='referral_bonus',
+                direction='credit',
+                source='referral',
+                meta={'referrer_user_id': referrer.id},
+            )
+        self.db.flush()
+        return ReferralApplyOut(ok=True, message='Referral applied successfully.', balance=balance.balance)
 
-    def tap_clicker(self, uid: str, taps: int) -> tuple[bool, int, int, int, bool, str, ClickerState]:
-        now = datetime.now(timezone.utc)
-        telegram_user_id = self._telegram_id_from_uid(uid)
-        record = self._get_or_create_clicker_record(uid=uid, now=now, telegram_user_id=telegram_user_id)
+    def claim_daily_bonus(self, user_id: str) -> tuple[bool, date | None, int, str, UserBalance]:
+        today = self._now().date()
+        existing = self.db.execute(
+            select(DailyReward).where(DailyReward.user_id == user_id, DailyReward.reward_date == today)
+        ).scalar_one_or_none()
+        balance = self.get_balance(user_id)
+        if existing is not None:
+            return False, today, 0, 'Daily bonus already claimed today.', balance
 
+        level = self._level_from_points(balance.balance)
+        amount = max(1, level) * max(1, settings.clicker_daily_bonus_per_level)
+        reward = DailyReward(
+            user_id=user_id,
+            reward_date=today,
+            level=level,
+            amount=amount,
+            created_at=self._now(),
+        )
+        self.db.add(reward)
+        balance, _ = self._record_balance_change(
+            user_id=user_id,
+            amount=amount,
+            tx_type='daily_bonus',
+            direction='credit',
+            source='daily_reward',
+            meta={'reward_date': today.isoformat(), 'level': level},
+        )
+        self.db.flush()
+        return True, today, amount, 'Daily bonus claimed.', balance
+
+    def get_referral_stats(self, user_id: str) -> ReferralsOut:
+        user = self._require_user(user_id)
+        referrer_link = self.db.execute(
+            select(Referral).where(Referral.referred_user_id == user_id)
+        ).scalar_one_or_none()
+        rows = self.db.execute(
+            select(Referral, User)
+            .join(User, User.id == Referral.referred_user_id)
+            .where(Referral.referrer_user_id == user_id)
+            .order_by(Referral.created_at.desc())
+        ).all()
+        items = [
+            ReferralItem(
+                user_id=referred_user.id,
+                username=referred_user.username,
+                first_name=referred_user.first_name,
+                last_name=referred_user.last_name,
+                created_at=referral.created_at,
+            )
+            for referral, referred_user in rows
+        ]
+        return ReferralsOut(
+            my_referral_code=user.referral_code,
+            referred_by_user_id=referrer_link.referrer_user_id if referrer_link else None,
+            referrals_count=len(items),
+            items=items,
+        )
+
+    def list_competitions(self) -> list[CompetitionItem]:
+        rows = self.db.execute(select(Competition).order_by(Competition.created_at.desc())).scalars().all()
+        return [
+            CompetitionItem(
+                id=row.id,
+                title=row.title,
+                description=row.description,
+                status=row.status,
+                starts_at=row.starts_at,
+                ends_at=row.ends_at,
+                created_at=row.created_at,
+                updated_at=row.updated_at,
+            )
+            for row in rows
+        ]
+
+    def get_competition(self, competition_id: str) -> CompetitionItem:
+        row = self.db.get(Competition, competition_id)
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Competition not found')
+        return CompetitionItem(
+            id=row.id,
+            title=row.title,
+            description=row.description,
+            status=row.status,
+            starts_at=row.starts_at,
+            ends_at=row.ends_at,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+
+    def get_competition_leaderboard(self, competition_id: str, limit: int = 50) -> list[CompetitionLeaderboardItem]:
+        if self.db.get(Competition, competition_id) is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Competition not found')
+
+        rows = self.db.execute(
+            select(CompetitionScore, User)
+            .join(User, User.id == CompetitionScore.user_id)
+            .where(CompetitionScore.competition_id == competition_id)
+            .order_by(CompetitionScore.score.desc(), CompetitionScore.updated_at.desc())
+            .limit(max(1, min(limit, 100)))
+        ).all()
+        return [
+            CompetitionLeaderboardItem(
+                rank=index + 1,
+                user_id=user.id,
+                username=user.username,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                score=score.score,
+                updated_at=score.updated_at,
+            )
+            for index, (score, user) in enumerate(rows)
+        ]
+
+    def list_users(self, limit: int = 100) -> list[AdminUserItem]:
+        users = self.db.execute(
+            select(User).order_by(User.created_at.desc()).limit(max(1, min(limit, 200)))
+        ).scalars().all()
+        return [
+            AdminUserItem(
+                id=user.id,
+                telegram_id=user.telegram_id,
+                email=user.email,
+                username=user.username,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                role=user.role,
+                is_active=user.is_active,
+                is_admin=user.is_admin,
+                balance=self.get_balance(user.id).balance,
+                created_at=user.created_at,
+                updated_at=user.updated_at,
+            )
+            for user in users
+        ]
+
+    def get_admin_user(self, user_id: str) -> AdminUserItem:
+        user = self._require_user(user_id)
+        balance = self.get_balance(user.id)
+        return AdminUserItem(
+            id=user.id,
+            telegram_id=user.telegram_id,
+            email=user.email,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            role=user.role,
+            is_active=user.is_active,
+            is_admin=user.is_admin,
+            balance=balance.balance,
+            created_at=user.created_at,
+            updated_at=user.updated_at,
+        )
+
+    def admin_adjust_balance(
+        self,
+        admin_user_id: str,
+        target_user_id: str,
+        amount: int,
+        reason: str,
+    ) -> AdminAdjustBalanceOut:
+        target_user = self._require_user(target_user_id)
+        balance = self._lock_balance(target_user.id)
+        old_data = {'balance': balance.balance}
+
+        direction = 'credit' if amount > 0 else 'debit'
+        updated_balance, tx = self._record_balance_change(
+            user_id=target_user.id,
+            amount=abs(amount),
+            tx_type='admin_adjustment',
+            direction=direction,
+            source='admin',
+            meta={'reason': reason, 'admin_user_id': admin_user_id},
+        )
+        self.db.add(
+            AdminAuditLog(
+                admin_user_id=admin_user_id,
+                target_user_id=target_user.id,
+                action='adjust_balance',
+                old_data=old_data,
+                new_data={'balance': updated_balance.balance, 'amount': amount, 'reason': reason},
+                created_at=self._now(),
+            )
+        )
+        self.db.flush()
+        return AdminAdjustBalanceOut(balance=updated_balance.balance, transaction_id=tx.id)
+
+    def list_audit_logs(self, limit: int = 100) -> list[AdminAuditLogItem]:
+        rows = self.db.execute(
+            select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc()).limit(max(1, min(limit, 200)))
+        ).scalars().all()
+        return [
+            AdminAuditLogItem(
+                id=row.id,
+                admin_user_id=row.admin_user_id,
+                target_user_id=row.target_user_id,
+                action=row.action,
+                old_data=row.old_data,
+                new_data=row.new_data,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
+    def list_locations(self) -> list[UserLocation]:
+        rows = self.db.execute(
+            select(UserLocationModel).order_by(UserLocationModel.created_at.desc()).limit(2000)
+        ).scalars().all()
+        return [
+            UserLocation(
+                id=row.id,
+                uid=row.user_id,
+                name=row.name,
+                city=row.city,
+                country=row.country,
+                lat=row.lat,
+                lng=row.lng,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
+    def _resolve_location_details(self, payload: UserLocationCreate) -> tuple[str, str]:
+        city = payload.city.strip() if isinstance(payload.city, str) else ''
+        country = payload.country.strip() if isinstance(payload.country, str) else ''
+
+        if not self._is_placeholder(city) and not self._is_placeholder(country):
+            return city, country
+
+        geocoded = self.geocoder.reverse(payload.lat, payload.lng)
+        if not geocoded:
+            return city or 'Unknown', country or 'Unknown'
+
+        resolved_city = geocoded.city if self._is_placeholder(city) and geocoded.city else city
+        resolved_country = geocoded.country if self._is_placeholder(country) and geocoded.country else country
+        return resolved_city or 'Unknown', resolved_country or 'Unknown'
+
+    def create_location(self, payload: UserLocationCreate) -> UserLocation:
+        self._require_user(payload.uid)
+        city, country = self._resolve_location_details(payload)
+        row = UserLocationModel(
+            user_id=payload.uid,
+            name=payload.name,
+            city=city,
+            country=country,
+            lat=payload.lat,
+            lng=payload.lng,
+            created_at=self._now(),
+            updated_at=self._now(),
+        )
+        self.db.add(row)
+        self.db.flush()
+        return UserLocation(
+            id=row.id,
+            uid=row.user_id,
+            name=row.name,
+            city=row.city,
+            country=row.country,
+            lat=row.lat,
+            lng=row.lng,
+            created_at=row.created_at,
+        )
+
+    def list_city_ranking(self) -> list[CityRankingItem]:
+        rows = self.db.execute(
+            select(
+                QrBinding.city,
+                QrBinding.country,
+                func.count(QrBinding.id).label('count_items'),
+                func.max(QrBinding.bound_at).label('updated_at'),
+            )
+            .group_by(QrBinding.city, QrBinding.country)
+            .order_by(desc('count_items'))
+            .limit(10)
+        ).all()
+
+        return [
+            CityRankingItem(
+                city=city,
+                country=country,
+                count_items=int(count_items),
+                updated_at=updated_at or self._now(),
+            )
+            for city, country, count_items, updated_at in rows
+        ]
+
+    def bind_qr(self, payload: QrBindIn) -> tuple[bool, str, str | None]:
+        self._require_user(payload.uid)
+        qr_id = payload.qr_id.strip().upper()
+        if not qr_id.startswith('NM-'):
+            return False, 'QR format invalid', None
+
+        existing = self.db.execute(select(QrBinding).where(QrBinding.qr_id == qr_id)).scalar_one_or_none()
+        if existing is not None:
+            return False, 'Этот QR уже привязан к другому профилю', None
+
+        secure_hash = make_qr_hash(qr_id)
+        city = payload.city.strip()
+        binding = QrBinding(
+            qr_id=qr_id,
+            owner_user_id=payload.uid,
+            item_name=payload.item_name,
+            city=city,
+            country='Unknown',
+            secure_hash=secure_hash,
+            status='bound',
+            bound_at=self._now(),
+        )
+        self.db.add(binding)
+        self.db.flush()
+        return True, 'QR успешно привязан к профилю', secure_hash
+
+    def _get_referred_by_telegram_id(self, user_id: str) -> int | None:
+        row = self.db.execute(
+            select(User.telegram_id)
+            .join(Referral, Referral.referrer_user_id == User.id)
+            .where(Referral.referred_user_id == user_id)
+        ).scalar_one_or_none()
+        return row
+
+    def get_clicker_state(self, user_id: str, taps_in_current_second: int = 0) -> ClickerState:
+        user = self._require_user(user_id)
+        balance = self.get_balance(user_id)
+        level = self._level_from_points(balance.balance)
+        referrals_count = self.db.execute(
+            select(func.count(Referral.id)).where(Referral.referrer_user_id == user_id)
+        ).scalar_one() or 0
+        latest_daily = self.db.execute(
+            select(DailyReward)
+            .where(DailyReward.user_id == user_id)
+            .order_by(DailyReward.reward_date.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        today = self._now().date()
+        daily_bonus_available = latest_daily is None or latest_daily.reward_date < today
+        next_daily_bonus_at = None
+        if latest_daily is not None and latest_daily.reward_date == today:
+            next_daily_bonus_at = self._utc_day_start(today + timedelta(days=1))
+        lottery_entry = self.db.execute(
+            select(LotteryEntry).where(LotteryEntry.user_id == user_id)
+        ).scalar_one_or_none()
+
+        return ClickerState(
+            uid=user.id,
+            telegram_user_id=user.telegram_id,
+            username=user.username,
+            display_name=self._display_name(user),
+            points=balance.balance,
+            level=level,
+            multiplier=level,
+            referrals=int(referrals_count),
+            referred_by=self._get_referred_by_telegram_id(user_id),
+            daily_bonus_available=daily_bonus_available,
+            daily_bonus_claimed_at=latest_daily.created_at if latest_daily else None,
+            next_daily_bonus_at=next_daily_bonus_at,
+            lottery_joined=lottery_entry is not None,
+            lottery_entered_at=lottery_entry.created_at if lottery_entry else None,
+            night_mode_unlocked=balance.balance > 0,
+            taps_in_current_second=max(0, taps_in_current_second),
+            level_start_points=self._points_for_level(level),
+            next_level_points=self._next_level_points(level),
+            updated_at=max(user.updated_at, balance.updated_at),
+        )
+
+    def tap_clicker(self, user_id: str, taps: int) -> tuple[bool, int, int, int, bool, str, ClickerState]:
         requested_taps = max(1, int(taps))
-        current_second = int(now.timestamp())
-        last_second = int(record.get('last_tap_second', 0))
-        taps_used = int(record.get('taps_in_second', 0)) if last_second == current_second else 0
         max_taps = max(1, settings.clicker_max_taps_per_second)
-        allowed_taps = max(0, max_taps - taps_used)
-        accepted_taps = min(requested_taps, allowed_taps)
+        accepted_taps = min(requested_taps, max_taps)
         rejected_taps = max(0, requested_taps - accepted_taps)
         throttled = accepted_taps == 0
 
-        multiplier = max(1, int(record.get('multiplier', 1)))
-        added_points = accepted_taps * multiplier
+        balance = self.get_balance(user_id)
+        level = self._level_from_points(balance.balance)
+        added_points = accepted_taps * max(1, level)
         if added_points > 0:
-            record['points'] = int(record.get('points', 0)) + added_points
-            new_level = self._level_from_points(int(record['points']))
-            record['level'] = new_level
-            record['multiplier'] = new_level
-            record['night_mode_unlocked'] = True
-
-        record['last_tap_second'] = current_second
-        record['taps_in_second'] = taps_used + accepted_taps
-        record['updated_at'] = now
-
-        self._save_clicker_record(record)
-        self._upsert_clicker_rating(record)
+            self._record_balance_change(
+                user_id=user_id,
+                amount=added_points,
+                tx_type='tap_reward',
+                direction='credit',
+                source='clicker',
+                meta={'taps': accepted_taps, 'multiplier': max(1, level)},
+            )
+            self.db.flush()
 
         if throttled:
-            message = 'Tap limit reached. Max 10 taps/sec.'
+            message = f'Tap limit reached. Max {max_taps} taps/request.'
         elif rejected_taps > 0:
             message = 'Part of taps were rejected by anti-cheat.'
         else:
@@ -465,297 +833,61 @@ class NightRepository:
             added_points,
             throttled,
             message,
-            self._to_clicker_state(record, now=now),
+            self.get_clicker_state(user_id, taps_in_current_second=accepted_taps),
         )
-
-    def claim_daily_bonus(self, uid: str) -> tuple[bool, int, str, ClickerState]:
-        now = datetime.now(timezone.utc)
-        telegram_user_id = self._telegram_id_from_uid(uid)
-        record = self._get_or_create_clicker_record(uid=uid, now=now, telegram_user_id=telegram_user_id)
-
-        claimed_at = self._safe_datetime(record.get('daily_bonus_claimed_at'))
-        if claimed_at is not None and now < claimed_at + timedelta(days=1):
-            return False, 0, 'Daily bonus is not available yet.', self._to_clicker_state(record, now=now)
-
-        level = max(1, int(record.get('level', 1)))
-        added_points = level * max(1, settings.clicker_daily_bonus_per_level)
-        record['points'] = int(record.get('points', 0)) + added_points
-        new_level = self._level_from_points(int(record['points']))
-        record['level'] = new_level
-        record['multiplier'] = new_level
-        record['daily_bonus_claimed_at'] = now
-        record['updated_at'] = now
-
-        self._save_clicker_record(record)
-        self._upsert_clicker_rating(record)
-
-        return True, added_points, 'Daily bonus claimed.', self._to_clicker_state(record, now=now)
-
-    def apply_referral(
-        self,
-        uid: str,
-        referrer_telegram_id: int,
-    ) -> tuple[bool, str, ClickerState]:
-        now = datetime.now(timezone.utc)
-        telegram_user_id = self._telegram_id_from_uid(uid)
-        record = self._get_or_create_clicker_record(uid=uid, now=now, telegram_user_id=telegram_user_id)
-
-        if record.get('referred_by') is not None:
-            return False, 'Referral already applied.', self._to_clicker_state(record, now=now)
-
-        if telegram_user_id is not None and telegram_user_id == referrer_telegram_id:
-            return False, 'Self-referral is not allowed.', self._to_clicker_state(record, now=now)
-
-        referrer_uid = self.build_clicker_uid(referrer_telegram_id)
-        referrer_record = self._get_or_create_clicker_record(
-            uid=referrer_uid,
-            now=now,
-            telegram_user_id=referrer_telegram_id,
-        )
-
-        bonus_levels = max(1, settings.clicker_referral_bonus_levels)
-        user_target_level = int(record.get('level', 1)) + bonus_levels
-        ref_target_level = int(referrer_record.get('level', 1)) + bonus_levels
-
-        record['points'] = max(int(record.get('points', 0)), self._points_for_level(user_target_level))
-        record['level'] = self._level_from_points(int(record['points']))
-        record['multiplier'] = int(record['level'])
-        record['referred_by'] = referrer_telegram_id
-        record['updated_at'] = now
-
-        referrer_record['points'] = max(
-            int(referrer_record.get('points', 0)),
-            self._points_for_level(ref_target_level),
-        )
-        referrer_record['level'] = self._level_from_points(int(referrer_record['points']))
-        referrer_record['multiplier'] = int(referrer_record['level'])
-        referrer_record['referrals'] = max(0, int(referrer_record.get('referrals', 0))) + 1
-        referrer_record['updated_at'] = now
-
-        self._save_clicker_record(record)
-        self._save_clicker_record(referrer_record)
-        self._upsert_clicker_rating(record)
-        self._upsert_clicker_rating(referrer_record)
-
-        return True, 'Referral bonus applied (+3 levels for both).', self._to_clicker_state(record, now=now)
 
     def clicker_leaderboard(self, limit: int = 50) -> list[ClickerLeaderboardItem]:
-        normalized_limit = min(50, max(1, int(limit)))
-
-        if not self.using_firestore:
-            rows = sorted(
-                self._clicker_users.values(),
-                key=lambda row: (
-                    -int(row.get('points', 0)),
-                    -(self._safe_datetime(row.get('updated_at')) or datetime.now(timezone.utc)).timestamp(),
-                ),
-            )[:normalized_limit]
-            now = datetime.now(timezone.utc)
-            return [
-                ClickerLeaderboardItem(
-                    rank=index + 1,
-                    uid=str(row.get('uid', 'unknown')),
-                    telegram_user_id=row.get('telegram_user_id'),
-                    display_name=str(row.get('display_name', 'Player')),
-                    points=max(0, int(row.get('points', 0))),
-                    level=max(1, int(row.get('level', 1))),
-                    referrals=max(0, int(row.get('referrals', 0))),
-                    updated_at=self._safe_datetime(row.get('updated_at')) or now,
-                )
-                for index, row in enumerate(rows)
-            ]
-
-        docs = (
-            self.db.collection('ratings')
-            .order_by('points', direction=firestore.Query.DESCENDING)
-            .limit(normalized_limit)
-            .stream()
-        )
+        rows = self.db.execute(
+            select(User, UserBalance)
+            .join(UserBalance, UserBalance.user_id == User.id)
+            .order_by(UserBalance.balance.desc(), UserBalance.updated_at.desc())
+            .limit(max(1, min(limit, 50)))
+        ).all()
 
         result: list[ClickerLeaderboardItem] = []
-        now = datetime.now(timezone.utc)
-        for index, doc in enumerate(docs):
-            raw = doc.to_dict() or {}
+        for index, (user, balance) in enumerate(rows):
+            referrals_count = self.db.execute(
+                select(func.count(Referral.id)).where(Referral.referrer_user_id == user.id)
+            ).scalar_one() or 0
             result.append(
                 ClickerLeaderboardItem(
                     rank=index + 1,
-                    uid=str(raw.get('uid', doc.id)),
-                    telegram_user_id=raw.get('telegram_user_id') if isinstance(raw.get('telegram_user_id'), int) else None,
-                    display_name=str(raw.get('display_name', 'Player')),
-                    points=max(0, int(raw.get('points', 0))),
-                    level=max(1, int(raw.get('level', 1))),
-                    referrals=max(0, int(raw.get('referrals', 0))),
-                    updated_at=self._safe_datetime(raw.get('updated_at')) or now,
+                    uid=user.id,
+                    telegram_user_id=user.telegram_id,
+                    display_name=self._display_name(user),
+                    points=balance.balance,
+                    level=self._level_from_points(balance.balance),
+                    referrals=int(referrals_count),
+                    updated_at=balance.updated_at,
                 )
             )
         return result
 
-    def enter_lottery(self, uid: str) -> tuple[bool, str, datetime | None, ClickerState]:
-        now = datetime.now(timezone.utc)
-        telegram_user_id = self._telegram_id_from_uid(uid)
-        record = self._get_or_create_clicker_record(uid=uid, now=now, telegram_user_id=telegram_user_id)
+    def enter_lottery(self, user_id: str) -> tuple[bool, str, datetime | None, ClickerState]:
+        entry = self.db.execute(select(LotteryEntry).where(LotteryEntry.user_id == user_id)).scalar_one_or_none()
+        if entry is not None:
+            return False, 'You are already in the lottery.', entry.created_at, self.get_clicker_state(user_id)
 
-        if bool(record.get('lottery_joined', False)):
-            return False, 'You are already in the lottery.', self._safe_datetime(
-                record.get('lottery_entered_at')
-            ), self._to_clicker_state(record, now=now)
-
-        record['lottery_joined'] = True
-        record['lottery_entered_at'] = now
-        record['updated_at'] = now
-
-        self._save_clicker_record(record)
-        self._upsert_clicker_rating(record)
-
-        entry_payload = {
-            'uid': uid,
-            'telegram_user_id': record.get('telegram_user_id'),
-            'display_name': record.get('display_name', 'Player'),
-            'points': int(record.get('points', 0)),
-            'level': int(record.get('level', 1)),
-            'entered_at': now,
-        }
-
-        if not self.using_firestore:
-            self._lottery_entries[uid] = entry_payload
-        else:
-            self.db.collection('lottery').document(uid).set(entry_payload, merge=True)
-
-        return True, 'Lottery entry saved.', now, self._to_clicker_state(record, now=now)
+        entry = LotteryEntry(user_id=user_id, created_at=self._now())
+        self.db.add(entry)
+        self.db.flush()
+        return True, 'Lottery entry saved.', entry.created_at, self.get_clicker_state(user_id)
 
     def list_lottery_entries(self) -> list[ClickerLotteryEntry]:
-        now = datetime.now(timezone.utc)
-        if not self.using_firestore:
-            rows = sorted(
-                self._lottery_entries.values(),
-                key=lambda row: -(self._safe_datetime(row.get('entered_at')) or now).timestamp(),
+        rows = self.db.execute(
+            select(LotteryEntry, User, UserBalance)
+            .join(User, User.id == LotteryEntry.user_id)
+            .join(UserBalance, UserBalance.user_id == User.id)
+            .order_by(LotteryEntry.created_at.desc())
+        ).all()
+        return [
+            ClickerLotteryEntry(
+                uid=user.id,
+                telegram_user_id=user.telegram_id,
+                display_name=self._display_name(user),
+                points=balance.balance,
+                level=self._level_from_points(balance.balance),
+                entered_at=entry.created_at,
             )
-            return [
-                ClickerLotteryEntry(
-                    uid=str(row.get('uid', 'unknown')),
-                    telegram_user_id=row.get('telegram_user_id') if isinstance(row.get('telegram_user_id'), int) else None,
-                    display_name=str(row.get('display_name', 'Player')),
-                    points=max(0, int(row.get('points', 0))),
-                    level=max(1, int(row.get('level', 1))),
-                    entered_at=self._safe_datetime(row.get('entered_at')) or now,
-                )
-                for row in rows
-            ]
-
-        docs = (
-            self.db.collection('lottery')
-            .order_by('entered_at', direction=firestore.Query.DESCENDING)
-            .limit(1000)
-            .stream()
-        )
-
-        result: list[ClickerLotteryEntry] = []
-        for doc in docs:
-            raw = doc.to_dict() or {}
-            result.append(
-                ClickerLotteryEntry(
-                    uid=str(raw.get('uid', doc.id)),
-                    telegram_user_id=raw.get('telegram_user_id') if isinstance(raw.get('telegram_user_id'), int) else None,
-                    display_name=str(raw.get('display_name', 'Player')),
-                    points=max(0, int(raw.get('points', 0))),
-                    level=max(1, int(raw.get('level', 1))),
-                    entered_at=self._safe_datetime(raw.get('entered_at')) or now,
-                )
-            )
-        return result
-
-    def list_city_ranking(self) -> list[CityRankingItem]:
-        if not self.using_firestore:
-            return sorted(store.city_ranking, key=lambda row: row.count_items, reverse=True)[:10]
-
-        docs = (
-            self.db.collection('city_rankings')
-            .order_by('count_items', direction=firestore.Query.DESCENDING)
-            .limit(10)
-            .stream()
-        )
-
-        result: list[CityRankingItem] = []
-        for doc in docs:
-            raw = doc.to_dict() or {}
-            updated_at = raw.get('updated_at')
-            if not isinstance(updated_at, datetime):
-                updated_at = datetime.now(timezone.utc)
-
-            result.append(
-                CityRankingItem(
-                    city=str(raw.get('city', doc.id)),
-                    country=str(raw.get('country', 'Unknown')),
-                    count_items=int(raw.get('count_items', 0)),
-                    updated_at=updated_at,
-                )
-            )
-
-        return result
-
-    def bind_qr(self, payload: QrBindIn) -> tuple[bool, str, str | None]:
-        qr_id = payload.qr_id.strip().upper()
-        if not qr_id.startswith('NM-'):
-            return False, 'QR format invalid', None
-
-        secure_hash = make_qr_hash(qr_id)
-
-        if not self.using_firestore:
-            if qr_id in store.bound_qr:
-                return False, 'Этот QR уже привязан к другому профилю', None
-
-            store.bound_qr[qr_id] = {
-                'owner_uid': payload.uid,
-                'item_name': payload.item_name,
-                'city': payload.city,
-                'secure_hash': secure_hash,
-            }
-            return True, 'QR успешно привязан к профилю', secure_hash
-
-        qr_ref = self.db.collection('qr_codes').document(qr_id)
-        qr_snapshot = qr_ref.get()
-
-        if qr_snapshot.exists:
-            qr_raw = qr_snapshot.to_dict() or {}
-            if qr_raw.get('status') == 'bound':
-                return False, 'Этот QR уже привязан к другому профилю', None
-
-        now = datetime.now(timezone.utc)
-
-        qr_ref.set(
-            {
-                'owner_uid': payload.uid,
-                'item_details': {
-                    'item_name': payload.item_name,
-                    'city': payload.city,
-                    'qr_id': qr_id,
-                },
-                'status': 'bound',
-                'secure_hash': secure_hash,
-                'bound_at': now,
-            },
-            merge=True,
-        )
-
-        self.db.collection('users').document(payload.uid).collection('items').document(qr_id).set(
-            {
-                'qr_id': qr_id,
-                'item_name': payload.item_name,
-                'status': 'bound',
-                'bound_at': now,
-            },
-            merge=True,
-        )
-
-        ranking_ref = self.db.collection('city_rankings').document(payload.city.lower())
-        ranking_ref.set(
-            {
-                'city': payload.city,
-                'country': 'Unknown',
-                'count_items': firestore.Increment(1),
-                'updated_at': now,
-            },
-            merge=True,
-        )
-
-        return True, 'QR успешно привязан к профилю', secure_hash
+            for entry, user, balance in rows
+        ]

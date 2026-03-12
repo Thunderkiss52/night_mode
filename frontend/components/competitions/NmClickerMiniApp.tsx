@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { Locale } from '@/lib/i18n';
+import { apiUrl } from '@/lib/api';
 import NmLogoMark from '@/components/ui/NmLogoMark';
 
 type Props = {
@@ -14,17 +15,64 @@ type FloatingBonus = {
   value: string;
 };
 
-type DemoState = {
+type ClickerState = {
+  uid: string;
+  telegram_user_id: number | null;
+  username: string | null;
+  display_name: string;
   points: number;
-  taps: number;
-  combo: number;
-  bestCombo: number;
-  bonusBank: number;
-  boostLevel: number;
+  level: number;
+  multiplier: number;
+  referrals: number;
+  referred_by: number | null;
+  daily_bonus_available: boolean;
+  daily_bonus_claimed_at: string | null;
+  next_daily_bonus_at: string | null;
+  lottery_joined: boolean;
+  lottery_entered_at: string | null;
+  night_mode_unlocked: boolean;
+  taps_in_current_second: number;
+  level_start_points: number;
+  next_level_points: number | null;
+  updated_at: string;
 };
 
-const DEMO_TAP_LIMIT = 36;
-const STORAGE_KEY = 'nm_clicker_demo_v2';
+type ClickerAuthResponse = {
+  access_token: string;
+  uid: string;
+  start_param?: string | null;
+  state: ClickerState;
+};
+
+type ClickerTapResponse = {
+  ok: boolean;
+  added_points: number;
+  message: string;
+  state: ClickerState;
+};
+
+type ClickerStateResponse = {
+  state: ClickerState;
+};
+
+type ClickerLeaderboardItem = {
+  rank: number;
+  uid: string;
+  telegram_user_id: number | null;
+  display_name: string;
+  points: number;
+  level: number;
+  referrals: number;
+  updated_at: string;
+};
+
+type ClickerLeaderboardResponse = {
+  items?: ClickerLeaderboardItem[];
+};
+
+const CLICKER_TOKEN_KEY = 'nm_clicker_access_token';
+const CLICKER_UID_KEY = 'nm_clicker_uid';
+const CLICKER_DEV_TG_ID_KEY = 'nm_clicker_dev_tg_id';
 
 const copy: Record<
   Locale,
@@ -32,183 +80,205 @@ const copy: Record<
     kicker: string;
     title: string;
     description: string;
-    score: string;
-    combo: string;
-    left: string;
-    bonusBank: string;
+    points: string;
+    level: string;
+    multiplier: string;
+    referrals: string;
+    progress: string;
+    dailyBonus: string;
+    lottery: string;
+    unlocked: string;
+    locked: string;
     tap: string;
-    bonus: string;
-    reset: string;
+    reload: string;
+    claimBonus: string;
+    joinLottery: string;
     openTelegram: string;
-    fullGame: string;
-    footer: string;
-    limited: string;
-    emptyBonus: string;
-    resetStatus: string;
-    bonusStatus: string;
-    tapStatus: string;
-    noteLabel: string;
+    applyReferral: string;
+    referralPlaceholder: string;
+    leaderboard: string;
+    connect: string;
+    connectHint: string;
     statusLabel: string;
-    boostLabel: string;
-    levelNames: string[];
+    playerLabel: string;
+    noLeaderboard: string;
   }
 > = {
   ru: {
-    kicker: 'демо режим',
-    title: 'Кликер челлендж',
-    description: 'Покликай немного, слови бонусы и переходи в Telegram за полной механикой.',
-    score: 'Очки',
-    combo: 'Комбо',
-    left: 'Тапов осталось',
-    bonusBank: 'Бонус банк',
+    kicker: 'api режим',
+    title: 'NM clicker',
+    description: 'Этот экран теперь работает от backend API: авторизация, очки, daily bonus, referral, leaderboard и lottery.',
+    points: 'Очки',
+    level: 'Уровень',
+    multiplier: 'Множитель',
+    referrals: 'Рефералы',
+    progress: 'Прогресс',
+    dailyBonus: 'Daily bonus',
+    lottery: 'Лотерея',
+    unlocked: 'Открыто',
+    locked: 'Закрыто',
     tap: 'Тапнуть',
-    bonus: 'Забрать бонус',
-    reset: 'Сбросить демо',
-    openTelegram: 'Перейти в Telegram',
-    fullGame: 'Полный кликер живет внутри Telegram app и не должен забирать аудиторию с сайта.',
-    footer: 'Разомни свои пальчики и получай призы.',
-    limited: 'Демо лимит закончился. Дальше переходи в Telegram.',
-    emptyBonus: 'Сначала набери серию и открой бонус банк.',
-    resetStatus: 'Демо прогресс сброшен. Можно снова разогнать пальцы.',
-    bonusStatus: 'Бонус активирован. В Telegram откроется полный режим.',
-    tapStatus: 'Серия растет. Еще немного и откроется жирный бонус.',
-    noteLabel: 'telegram funnel',
-    statusLabel: 'статус',
-    boostLabel: 'ускорение',
-    levelNames: ['Старт', 'Разогрев', 'Разнос', 'Ночной режим']
+    reload: 'Обновить',
+    claimBonus: 'Забрать бонус',
+    joinLottery: 'Войти в лотерею',
+    openTelegram: 'Открыть Telegram',
+    applyReferral: 'Применить реферал',
+    referralPlaceholder: 'Telegram ID реферера',
+    leaderboard: 'Лидерборд',
+    connect: 'Подключить clicker API',
+    connectHint: 'В Telegram используем `initData`, локально fallback на dev_telegram_user_id.',
+    statusLabel: 'Статус',
+    playerLabel: 'Игрок',
+    noLeaderboard: 'Лидерборд пока пуст.'
   },
   en: {
-    kicker: 'demo mode',
-    title: 'Clicker challenge',
-    description: 'Tap a little, collect bonuses, then move to Telegram for the full game.',
-    score: 'Score',
-    combo: 'Combo',
-    left: 'Taps left',
-    bonusBank: 'Bonus bank',
+    kicker: 'api mode',
+    title: 'NM clicker',
+    description: 'This screen now uses backend APIs for auth, points, daily bonus, referrals, leaderboard, and lottery.',
+    points: 'Points',
+    level: 'Level',
+    multiplier: 'Multiplier',
+    referrals: 'Referrals',
+    progress: 'Progress',
+    dailyBonus: 'Daily bonus',
+    lottery: 'Lottery',
+    unlocked: 'Unlocked',
+    locked: 'Locked',
     tap: 'Tap',
-    bonus: 'Claim bonus',
-    reset: 'Reset demo',
+    reload: 'Reload',
+    claimBonus: 'Claim bonus',
+    joinLottery: 'Join lottery',
     openTelegram: 'Open Telegram',
-    fullGame: 'The full clicker belongs inside the Telegram app so the site stays a lightweight funnel.',
-    footer: 'Warm up your fingers and grab rewards.',
-    limited: 'Demo limit reached. Continue in Telegram.',
-    emptyBonus: 'Build a streak first to unlock the bonus bank.',
-    resetStatus: 'Demo progress reset. You can run it again.',
-    bonusStatus: 'Bonus claimed. Telegram opens the full version.',
-    tapStatus: 'Streak is growing. A bigger bonus is close.',
-    noteLabel: 'telegram funnel',
-    statusLabel: 'status',
-    boostLabel: 'boost',
-    levelNames: ['Start', 'Warmup', 'Rush', 'Night mode']
+    applyReferral: 'Apply referral',
+    referralPlaceholder: 'Referrer Telegram ID',
+    leaderboard: 'Leaderboard',
+    connect: 'Connect clicker API',
+    connectHint: 'Telegram uses `initData`, local mode falls back to dev_telegram_user_id.',
+    statusLabel: 'Status',
+    playerLabel: 'Player',
+    noLeaderboard: 'Leaderboard is empty for now.'
   },
   am: {
-    kicker: 'demo mode',
-    title: 'Clicker challenge',
-    description: 'Մի քիչ tap արա, վերցրու բոնուսները ու հետո անցիր Telegram:',
-    score: 'Միավորներ',
-    combo: 'Կոմբո',
-    left: 'Մնացած tap-եր',
-    bonusBank: 'Բոնուս բանկ',
+    kicker: 'api mode',
+    title: 'NM clicker',
+    description: 'Այս էկրանը հիմա աշխատում է backend API-ներով auth, points, daily bonus, referrals, leaderboard և lottery-ի համար:',
+    points: 'Միավորներ',
+    level: 'Մակարդակ',
+    multiplier: 'Multiplier',
+    referrals: 'Referrals',
+    progress: 'Progress',
+    dailyBonus: 'Daily bonus',
+    lottery: 'Lottery',
+    unlocked: 'Unlocked',
+    locked: 'Locked',
     tap: 'Tap',
-    bonus: 'Վերցնել բոնուսը',
-    reset: 'Սկսել նորից',
-    openTelegram: 'Բացել Telegram',
-    fullGame: 'Ամբողջական clicker-ը պետք է մնա Telegram app-ի ներսում, իսկ կայքը լինի արագ մուտք:',
-    footer: 'Տաքացրու մատերդ ու վերցրու մրցանակները:',
-    limited: 'Demo limit-ը վերջացավ. անցիր Telegram:',
-    emptyBonus: 'Սկզբում հավաքիր սերիա, որ bonus bank-ը բացվի:',
-    resetStatus: 'Demo progress-ը մաքրվեց. կարող ես նորից սկսել:',
-    bonusStatus: 'Բոնուսը վերցված է. ամբողջ ռեժիմը Telegram-ում է:',
-    tapStatus: 'Սերիան աճում է. մեծ բոնուսը մոտ է:',
-    noteLabel: 'telegram funnel',
-    statusLabel: 'status',
-    boostLabel: 'boost',
-    levelNames: ['Սկիզբ', 'Տաքացում', 'Ռիթմ', 'Night mode']
+    reload: 'Reload',
+    claimBonus: 'Claim bonus',
+    joinLottery: 'Join lottery',
+    openTelegram: 'Open Telegram',
+    applyReferral: 'Apply referral',
+    referralPlaceholder: 'Referrer Telegram ID',
+    leaderboard: 'Leaderboard',
+    connect: 'Connect clicker API',
+    connectHint: 'Telegram-ում օգտագործվում է `initData`, local mode-ում `dev_telegram_user_id`:',
+    statusLabel: 'Status',
+    playerLabel: 'Player',
+    noLeaderboard: 'Leaderboard-ը դեռ դատարկ է:'
   },
   kk: {
-    kicker: 'demo mode',
-    title: 'Кликер челлендж',
-    description: 'Аздап шертіп көр, бонус жина да, толық нұсқа үшін Telegram-ға өт.',
-    score: 'Ұпай',
-    combo: 'Комбо',
-    left: 'Қалған tap',
-    bonusBank: 'Бонус банк',
+    kicker: 'api режим',
+    title: 'NM clicker',
+    description: 'Бұл экран енді backend API арқылы жұмыс істейді: auth, points, daily bonus, referral, leaderboard және lottery.',
+    points: 'Ұпай',
+    level: 'Деңгей',
+    multiplier: 'Көбейткіш',
+    referrals: 'Рефералдар',
+    progress: 'Прогресс',
+    dailyBonus: 'Daily bonus',
+    lottery: 'Lottery',
+    unlocked: 'Ашық',
+    locked: 'Жабық',
     tap: 'Тап',
-    bonus: 'Бонусты алу',
-    reset: 'Демоны тазалау',
+    reload: 'Жаңарту',
+    claimBonus: 'Бонусты алу',
+    joinLottery: 'Лотереяға кіру',
     openTelegram: 'Telegram ашу',
-    fullGame: 'Толық кликер Telegram app ішінде қалады, ал сайт тек жылдам кіру нүктесі болады.',
-    footer: 'Саусақтарыңды қыздыр да, сыйлықтарды ал.',
-    limited: 'Демо лимит бітті. Әрі қарай Telegram-ға өт.',
-    emptyBonus: 'Алдымен серия жинап, бонус банкті аш.',
-    resetStatus: 'Демо прогресс тазаланды. Қайта бастауға болады.',
-    bonusStatus: 'Бонус алынды. Толық нұсқа Telegram ішінде.',
-    tapStatus: 'Серия өсіп жатыр. Үлкен бонус жақын.',
-    noteLabel: 'telegram funnel',
-    statusLabel: 'status',
-    boostLabel: 'boost',
-    levelNames: ['Бастау', 'Қызу', 'Қарқын', 'Night mode']
+    applyReferral: 'Рефералды қолдану',
+    referralPlaceholder: 'Реферер Telegram ID',
+    leaderboard: 'Лидерборд',
+    connect: 'Clicker API қосу',
+    connectHint: 'Telegram ішінде `initData`, локалда `dev_telegram_user_id` қолданылады.',
+    statusLabel: 'Статус',
+    playerLabel: 'Ойыншы',
+    noLeaderboard: 'Лидерборд әзірге бос.'
   }
 };
 
-function getTelegramUrl() {
-  const username = (process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || 'nightmode').replace(/^@/, '').trim();
-  return `https://t.me/${username}?startapp=clicker_demo`;
+function clickerHeaders(token: string | null, base: HeadersInit = {}): HeadersInit {
+  if (!token) return base;
+  return {
+    ...base,
+    Authorization: `Bearer ${token}`
+  };
 }
 
-function getInitialState(): DemoState {
-  return {
-    points: 0,
-    taps: 0,
-    combo: 0,
-    bestCombo: 0,
-    bonusBank: 0,
-    boostLevel: 0
+function getStoredClickerToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  const token = window.localStorage.getItem(CLICKER_TOKEN_KEY);
+  return token?.trim() || null;
+}
+
+function saveClickerSession(token: string, uid: string) {
+  window.localStorage.setItem(CLICKER_TOKEN_KEY, token);
+  window.localStorage.setItem(CLICKER_UID_KEY, uid);
+}
+
+function getTelegramUrl() {
+  const username = (process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || 'nightmode').replace(/^@/, '').trim();
+  return `https://t.me/${username}?startapp=clicker`;
+}
+
+function getTelegramInitData() {
+  if (typeof window === 'undefined') return '';
+  const tg = window as Window & {
+    Telegram?: {
+      WebApp?: {
+        initData?: string;
+        openTelegramLink?: (value: string) => void;
+      };
+    };
   };
+  return tg.Telegram?.WebApp?.initData?.trim() || '';
+}
+
+function getOrCreateDevTelegramId() {
+  const stored = window.localStorage.getItem(CLICKER_DEV_TG_ID_KEY);
+  if (stored?.trim()) return Number(stored);
+
+  const generated = Math.floor(Date.now() / 1000);
+  window.localStorage.setItem(CLICKER_DEV_TG_ID_KEY, String(generated));
+  return generated;
+}
+
+function formatCount(value: number) {
+  return new Intl.NumberFormat('ru-RU').format(value);
+}
+
+function formatDate(value: string | null, locale: Locale) {
+  if (!value) return '—';
+  return new Date(value).toLocaleString(locale === 'ru' ? 'ru-RU' : locale);
 }
 
 export default function NmClickerMiniApp({ locale }: Props) {
   const t = copy[locale];
-  const [demo, setDemo] = useState<DemoState>(getInitialState);
-  const [floatingBonuses, setFloatingBonuses] = useState<FloatingBonus[]>([]);
-  const [statusText, setStatusText] = useState<string>(t.tapStatus);
+  const [token, setToken] = useState<string | null>(null);
+  const [state, setState] = useState<ClickerState | null>(null);
+  const [leaderboard, setLeaderboard] = useState<ClickerLeaderboardItem[]>([]);
+  const [statusText, setStatusText] = useState(t.connectHint);
+  const [isBusy, setIsBusy] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
-
-  useEffect(() => {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-
-    try {
-      const parsed = JSON.parse(raw) as DemoState;
-      setDemo({
-        points: parsed.points || 0,
-        taps: parsed.taps || 0,
-        combo: parsed.combo || 0,
-        bestCombo: parsed.bestCombo || 0,
-        bonusBank: parsed.bonusBank || 0,
-        boostLevel: parsed.boostLevel || 0
-      });
-    } catch {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(demo));
-  }, [demo]);
-
-  useEffect(() => {
-    setStatusText(copy[locale].tapStatus);
-  }, [locale]);
-
-  const pointsToLevel = [0, 180, 420, 900];
-  let levelIndex = 0;
-  if (demo.points >= pointsToLevel[3]) levelIndex = 3;
-  else if (demo.points >= pointsToLevel[2]) levelIndex = 2;
-  else if (demo.points >= pointsToLevel[1]) levelIndex = 1;
-
-  const remainingTaps = Math.max(0, DEMO_TAP_LIMIT - demo.taps);
-  const currentLevel = t.levelNames[levelIndex];
+  const [referrerId, setReferrerId] = useState('');
+  const [floatingBonuses, setFloatingBonuses] = useState<FloatingBonus[]>([]);
 
   const spawnBonus = (value: string) => {
     const id = Date.now() + Math.round(Math.random() * 1000);
@@ -226,73 +296,250 @@ export default function NmClickerMiniApp({ locale }: Props) {
 
   const openTelegram = () => {
     const url = getTelegramUrl();
-    const tg = (window as unknown as { Telegram?: { WebApp?: { openTelegramLink?: (value: string) => void } } }).Telegram;
-    if (tg?.WebApp?.openTelegramLink) {
-      tg.WebApp.openTelegramLink(url);
+    const tg = window as Window & {
+      Telegram?: { WebApp?: { openTelegramLink?: (value: string) => void } };
+    };
+
+    if (tg.Telegram?.WebApp?.openTelegramLink) {
+      tg.Telegram.WebApp.openTelegramLink(url);
       return;
     }
+
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const handleTap = () => {
-    let gain = 0;
-    let unlockedBonus = false;
+  const loadLeaderboard = async (currentToken: string | null = token) => {
+    try {
+      const response = await fetch(apiUrl('/api/clicker/leaderboard?limit=8'), {
+        headers: clickerHeaders(currentToken)
+      });
+      if (!response.ok) return;
+      const data = (await response.json()) as ClickerLeaderboardResponse;
+      setLeaderboard(Array.isArray(data.items) ? data.items : []);
+    } catch {}
+  };
 
-    setDemo((current) => {
-      const left = DEMO_TAP_LIMIT - current.taps;
-      if (left <= 0) {
-        return current;
+  const connectClicker = async () => {
+    setIsBusy(true);
+    setStatusText(t.connectHint);
+
+    try {
+      const initData = getTelegramInitData();
+      const payload = initData
+        ? { init_data: initData }
+        : {
+            dev_telegram_user_id: getOrCreateDevTelegramId(),
+            username: 'night_mode_web',
+            first_name: 'Night',
+            last_name: 'Mode'
+          };
+
+      const response = await fetch(apiUrl('/api/clicker/auth/telegram'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = (await response.json()) as ClickerAuthResponse | { detail?: string };
+
+      if (!response.ok || !('access_token' in data)) {
+        setStatusText(('detail' in data && data.detail) || 'Clicker auth failed');
+        return;
       }
 
-      gain = 18 + current.boostLevel * 10 + Math.min(24, current.combo * 2);
-      const nextTaps = current.taps + 1;
-      const nextCombo = current.combo + 1;
-      unlockedBonus = nextTaps % 6 === 0;
+      saveClickerSession(data.access_token, data.uid);
+      setToken(data.access_token);
+      setState(data.state);
+      setStatusText(`Clicker session ready: ${data.state.display_name}`);
+      await loadLeaderboard(data.access_token);
+    } catch {
+      setStatusText('Clicker API недоступен.');
+    } finally {
+      setIsBusy(false);
+    }
+  };
 
-      return {
-        ...current,
-        points: current.points + gain,
-        taps: nextTaps,
-        combo: nextCombo,
-        bestCombo: Math.max(current.bestCombo, nextCombo),
-        bonusBank: unlockedBonus ? current.bonusBank + 1 : current.bonusBank
-      };
-    });
+  useEffect(() => {
+    setStatusText(copy[locale].connectHint);
+  }, [locale]);
 
-    if (gain <= 0) {
-      setStatusText(t.limited);
-      return;
+  useEffect(() => {
+    let active = true;
+
+    async function restoreOrConnect() {
+      const storedToken = getStoredClickerToken();
+      if (!storedToken) {
+        await connectClicker();
+        return;
+      }
+
+      try {
+        const response = await fetch(apiUrl('/api/clicker/state'), {
+          headers: clickerHeaders(storedToken)
+        });
+
+        if (!response.ok) {
+          await connectClicker();
+          return;
+        }
+
+        const data = (await response.json()) as ClickerStateResponse;
+        if (!active) return;
+
+        setToken(storedToken);
+        setState(data.state);
+        setStatusText(`Clicker session restored: ${data.state.display_name}`);
+        await loadLeaderboard(storedToken);
+      } catch {
+        await connectClicker();
+      }
     }
 
+    void restoreOrConnect();
+
+    return () => {
+      active = false;
+    };
+  }, [t.connectHint]);
+
+  const refreshState = async () => {
+    if (!token) return;
+
+    setIsBusy(true);
+    try {
+      const response = await fetch(apiUrl('/api/clicker/state'), {
+        headers: clickerHeaders(token)
+      });
+      const data = (await response.json()) as ClickerStateResponse | { detail?: string };
+      if (!response.ok || !('state' in data)) {
+        setStatusText(('detail' in data && data.detail) || 'State refresh failed');
+        return;
+      }
+      setState(data.state);
+      setStatusText(`State updated: ${data.state.display_name}`);
+    } catch {
+      setStatusText('Не удалось обновить clicker state.');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleTap = async () => {
+    if (!token) return;
+
+    setIsBusy(true);
     setIsPressed(true);
-    window.setTimeout(() => setIsPressed(false), 130);
-    spawnBonus(`+${gain}`);
-    setStatusText(unlockedBonus ? `${t.tapStatus} +1 bonus.` : t.tapStatus);
-  };
 
-  const handleClaimBonus = () => {
-    if (demo.bonusBank <= 0) {
-      setStatusText(t.emptyBonus);
-      return;
+    try {
+      const response = await fetch(apiUrl('/api/clicker/tap'), {
+        method: 'POST',
+        headers: clickerHeaders(token, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ taps: 1 })
+      });
+
+      const data = (await response.json()) as ClickerTapResponse | { detail?: string };
+      if (!response.ok || !('state' in data)) {
+        setStatusText(('detail' in data && data.detail) || 'Tap failed');
+        return;
+      }
+
+      setState(data.state);
+      setStatusText(data.message);
+      if (data.added_points > 0) {
+        spawnBonus(`+${data.added_points}`);
+      }
+      await loadLeaderboard(token);
+    } catch {
+      setStatusText('Не удалось отправить tap.');
+    } finally {
+      window.setTimeout(() => setIsPressed(false), 130);
+      setIsBusy(false);
     }
-
-    const reward = demo.bonusBank * 120 + demo.bestCombo * 8;
-    setDemo((current) => ({
-      ...current,
-      points: current.points + reward,
-      combo: 0,
-      bonusBank: 0,
-      boostLevel: Math.min(current.boostLevel + 1, 3)
-    }));
-    spawnBonus(`+${reward}`);
-    setStatusText(t.bonusStatus);
   };
 
-  const handleReset = () => {
-    setDemo(getInitialState());
-    setStatusText(t.resetStatus);
-    window.localStorage.removeItem(STORAGE_KEY);
+  const handleDailyBonus = async () => {
+    if (!token) return;
+
+    setIsBusy(true);
+    try {
+      const response = await fetch(apiUrl('/api/clicker/daily-bonus'), {
+        method: 'POST',
+        headers: clickerHeaders(token)
+      });
+      const data = (await response.json()) as ClickerTapResponse | { detail?: string };
+      if (!response.ok || !('state' in data)) {
+        setStatusText(('detail' in data && data.detail) || 'Daily bonus failed');
+        return;
+      }
+
+      setState(data.state);
+      setStatusText(data.message);
+      if (data.added_points > 0) {
+        spawnBonus(`+${data.added_points}`);
+      }
+      await loadLeaderboard(token);
+    } catch {
+      setStatusText('Не удалось забрать daily bonus.');
+    } finally {
+      setIsBusy(false);
+    }
   };
+
+  const handleLottery = async () => {
+    if (!token) return;
+
+    setIsBusy(true);
+    try {
+      const response = await fetch(apiUrl('/api/clicker/lottery/enter'), {
+        method: 'POST',
+        headers: clickerHeaders(token)
+      });
+      const data = (await response.json()) as ClickerTapResponse | { detail?: string };
+      if (!response.ok || !('state' in data)) {
+        setStatusText(('detail' in data && data.detail) || 'Lottery request failed');
+        return;
+      }
+
+      setState(data.state);
+      setStatusText(data.message);
+    } catch {
+      setStatusText('Не удалось войти в лотерею.');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleReferral = async () => {
+    if (!token || !referrerId.trim()) return;
+
+    setIsBusy(true);
+    try {
+      const response = await fetch(apiUrl('/api/clicker/referral/apply'), {
+        method: 'POST',
+        headers: clickerHeaders(token, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ referrer_telegram_id: Number(referrerId) })
+      });
+      const data = (await response.json()) as ClickerTapResponse | { detail?: string };
+      if (!response.ok || !('state' in data)) {
+        setStatusText(('detail' in data && data.detail) || 'Referral apply failed');
+        return;
+      }
+
+      setState(data.state);
+      setStatusText(data.message);
+      await loadLeaderboard(token);
+    } catch {
+      setStatusText('Не удалось применить referral.');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const progressValue = state
+    ? state.next_level_points === null
+      ? 'MAX'
+      : `${Math.max(0, state.points - state.level_start_points)} / ${Math.max(0, state.next_level_points - state.level_start_points)}`
+    : '—';
 
   return (
     <section className="nm-line-panel nm-card relative overflow-hidden rounded-[2rem] p-5 md:p-7">
@@ -306,9 +553,9 @@ export default function NmClickerMiniApp({ locale }: Props) {
             <p className="text-sm leading-7 text-white/68">{t.description}</p>
           </div>
           <div className="nm-card rounded-[1.6rem] px-5 py-4 text-right">
-            <p className="text-xs uppercase tracking-[0.24em] text-white/45">{t.score}</p>
-            <p className="mt-2 text-4xl font-black text-gold-400">{demo.points}</p>
-            <p className="mt-2 text-sm uppercase tracking-[0.2em] text-white/55">{currentLevel}</p>
+            <p className="text-xs uppercase tracking-[0.24em] text-white/45">{t.playerLabel}</p>
+            <p className="mt-2 text-xl font-black text-gold-400">{state?.display_name || '—'}</p>
+            <p className="mt-2 text-xs uppercase tracking-[0.2em] text-white/55">{state?.uid || 'not connected'}</p>
           </div>
         </div>
 
@@ -316,16 +563,16 @@ export default function NmClickerMiniApp({ locale }: Props) {
           <div className="nm-card relative overflow-hidden rounded-[1.8rem] p-5">
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-[1.3rem] border border-white/8 bg-black/20 p-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-white/45">{t.combo}</p>
-                <p className="mt-3 text-3xl font-black text-white">{demo.combo}</p>
+                <p className="text-xs uppercase tracking-[0.22em] text-white/45">{t.points}</p>
+                <p className="mt-3 text-3xl font-black text-white">{formatCount(state?.points || 0)}</p>
               </div>
               <div className="rounded-[1.3rem] border border-white/8 bg-black/20 p-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-white/45">{t.left}</p>
-                <p className="mt-3 text-3xl font-black text-white">{remainingTaps}</p>
+                <p className="text-xs uppercase tracking-[0.22em] text-white/45">{t.level}</p>
+                <p className="mt-3 text-3xl font-black text-white">{state?.level || '—'}</p>
               </div>
               <div className="rounded-[1.3rem] border border-white/8 bg-black/20 p-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-white/45">{t.bonusBank}</p>
-                <p className="mt-3 text-3xl font-black text-gold-400">{demo.bonusBank}</p>
+                <p className="text-xs uppercase tracking-[0.22em] text-white/45">{t.multiplier}</p>
+                <p className="mt-3 text-3xl font-black text-gold-400">x{state?.multiplier || 1}</p>
               </div>
             </div>
 
@@ -343,7 +590,8 @@ export default function NmClickerMiniApp({ locale }: Props) {
               <button
                 type="button"
                 onClick={handleTap}
-                className={`relative rounded-[2rem] border border-gold-500/30 bg-black/50 p-6 transition duration-150 active:scale-95 ${
+                disabled={!token || isBusy}
+                className={`relative rounded-[2rem] border border-gold-500/30 bg-black/50 p-6 transition duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${
                   isPressed ? 'scale-95 shadow-[0_0_48px_rgba(230,196,89,0.18)]' : 'scale-100'
                 }`}
               >
@@ -356,40 +604,113 @@ export default function NmClickerMiniApp({ locale }: Props) {
             </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <button type="button" onClick={handleTap} className="nm-action rounded-full px-4 py-3 text-sm font-semibold uppercase tracking-[0.18em]">
+              <button type="button" onClick={handleTap} disabled={!token || isBusy} className="nm-action rounded-full px-4 py-3 text-sm font-semibold uppercase tracking-[0.18em] disabled:cursor-not-allowed disabled:opacity-50">
                 {t.tap}
               </button>
-              <button type="button" onClick={handleClaimBonus} className="nm-pill rounded-full px-4 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-gold-400">
-                {t.bonus}
+              <button type="button" onClick={handleDailyBonus} disabled={!token || isBusy} className="nm-pill rounded-full px-4 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-gold-400 disabled:cursor-not-allowed disabled:opacity-50">
+                {t.claimBonus}
               </button>
-              <button type="button" onClick={handleReset} className="nm-pill rounded-full px-4 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white/80">
-                {t.reset}
+              <button type="button" onClick={refreshState} disabled={!token || isBusy} className="nm-pill rounded-full px-4 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white/80 disabled:cursor-not-allowed disabled:opacity-50">
+                {t.reload}
               </button>
-              <button type="button" onClick={openTelegram} className="nm-pill rounded-full border-gold-500/25 px-4 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-gold-400">
-                {t.openTelegram}
+              <button type="button" onClick={handleLottery} disabled={!token || isBusy} className="nm-pill rounded-full border-gold-500/25 px-4 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-gold-400 disabled:cursor-not-allowed disabled:opacity-50">
+                {t.joinLottery}
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
+              <input
+                type="number"
+                value={referrerId}
+                onChange={(event) => setReferrerId(event.target.value)}
+                className="rounded-full border border-gold-500/25 bg-black/40 px-4 py-3 text-sm text-white outline-none focus:border-gold-500"
+                placeholder={t.referralPlaceholder}
+              />
+              <button
+                type="button"
+                onClick={handleReferral}
+                disabled={!token || isBusy || !referrerId.trim()}
+                className="nm-pill rounded-full px-4 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-gold-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {t.applyReferral}
               </button>
             </div>
           </div>
 
           <div className="space-y-4">
             <div className="nm-card rounded-[1.8rem] p-5">
-              <p className="text-xs uppercase tracking-[0.24em] text-white/45">{t.noteLabel}</p>
-              <p className="mt-3 text-sm leading-7 text-white/65">{t.fullGame}</p>
-              <p className="mt-4 text-sm leading-7 text-white/65">{t.footer}</p>
+              <p className="text-xs uppercase tracking-[0.24em] text-white/45">{t.progress}</p>
+              <p className="mt-3 text-3xl font-black text-white">{progressValue}</p>
+              <p className="mt-2 text-sm leading-7 text-white/58">
+                {t.dailyBonus}: {state?.daily_bonus_available ? t.unlocked : formatDate(state?.next_daily_bonus_at || null, locale)}
+              </p>
+              <p className="text-sm leading-7 text-white/58">
+                {t.lottery}: {state?.lottery_joined ? formatDate(state?.lottery_entered_at || null, locale) : t.locked}
+              </p>
+              <p className="text-sm leading-7 text-white/58">
+                Night Mode: {state?.night_mode_unlocked ? t.unlocked : t.locked}
+              </p>
             </div>
+
             <div className="nm-card rounded-[1.8rem] p-5">
               <p className="text-xs uppercase tracking-[0.24em] text-white/45">{t.statusLabel}</p>
               <p className="mt-3 text-sm leading-7 text-gold-400">{statusText}</p>
             </div>
+
             <div className="nm-card rounded-[1.8rem] p-5">
-              <p className="text-xs uppercase tracking-[0.24em] text-white/45">{t.boostLabel}</p>
-              <p className="mt-3 text-3xl font-black text-white">x{demo.boostLevel + 1}</p>
+              <p className="text-xs uppercase tracking-[0.24em] text-white/45">{t.referrals}</p>
+              <p className="mt-3 text-3xl font-black text-white">{state?.referrals || 0}</p>
               <p className="mt-2 text-sm leading-7 text-white/58">
-                {remainingTaps > 0 ? `${t.left}: ${remainingTaps}` : t.limited}
+                Telegram ID: {state?.telegram_user_id || '—'}
               </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button type="button" onClick={openTelegram} className="nm-pill rounded-full border-gold-500/25 px-4 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-gold-400">
+                  {t.openTelegram}
+                </button>
+                <button type="button" onClick={connectClicker} disabled={isBusy} className="nm-pill rounded-full px-4 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white/80 disabled:cursor-not-allowed disabled:opacity-50">
+                  {t.connect}
+                </button>
+              </div>
             </div>
           </div>
         </div>
+
+        <section className="nm-card rounded-[1.8rem] p-5">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-xl font-bold text-gold-400">{t.leaderboard}</h3>
+            <button type="button" onClick={() => void loadLeaderboard(token)} className="text-sm text-white/65">
+              {t.reload}
+            </button>
+          </div>
+          {leaderboard.length > 0 ? (
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gold-500/20 text-left text-gold-400">
+                    <th className="py-2">#</th>
+                    <th className="py-2">{t.playerLabel}</th>
+                    <th className="py-2">{t.points}</th>
+                    <th className="py-2">{t.level}</th>
+                    <th className="py-2">{t.referrals}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaderboard.map((item) => (
+                    <tr key={item.uid} className="border-b border-gold-500/10">
+                      <td className="py-2">{item.rank}</td>
+                      <td className="py-2">{item.display_name}</td>
+                      <td className="py-2">{formatCount(item.points)}</td>
+                      <td className="py-2">{item.level}</td>
+                      <td className="py-2">{item.referrals}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-white/60">{t.noLeaderboard}</p>
+          )}
+        </section>
       </div>
     </section>
   );

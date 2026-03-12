@@ -1,4 +1,4 @@
-.PHONY: dev-web dev-api dev-bot typecheck api-compile docker-up docker-down
+.PHONY: dev-web dev-api dev-bot typecheck api-compile docker-up docker-down deploy-init
 
 dev-web:
 	cd frontend && npm run dev:web
@@ -20,3 +20,7 @@ docker-up:
 
 docker-down:
 	docker compose down
+
+deploy-init:
+	test -f .env || cp .env.example .env
+	test -f backend/.env || cp backend/.env.example backend/.env

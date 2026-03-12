@@ -30,7 +30,7 @@ cd /opt/night_mode
 
 ## 4) Prepare env
 ```bash
-cp .env.deploy.example .env
+cp .env.example .env
 cp backend/.env.example backend/.env
 nano .env
 nano backend/.env

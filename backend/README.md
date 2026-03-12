@@ -3,7 +3,9 @@
 ## Structure
 - `app/core`: config, security, DI container
 - `app/domain`: schemas
-- `app/infrastructure`: firebase adapter, repositories, in-memory store
+- `app/models`: SQLAlchemy models
+- `app/infrastructure`: repositories и вспомогательные store-утилиты
+- `alembic`: миграции PostgreSQL
 - `app/services`: business logic
 - `app/api`: http routes
 - `app/bot`: Telegram bot (polling, referral deep links, Mini App button)
@@ -14,7 +16,8 @@
 3. `source .venv/bin/activate`
 4. `pip install -r requirements.txt`
 5. `cp .env.example .env`
-6. `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
+6. `alembic upgrade head`
+7. `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
 
 Swagger UI: `http://localhost:8000/docs`
 
@@ -32,16 +35,32 @@ Bot commands:
 - `/help` lists commands.
 
 ## Auth flow
-1. Client gets Firebase ID token from Firebase Auth.
-2. Call `POST /api/auth/firebase-login`.
-3. API returns JWT access token.
-4. Send `Authorization: Bearer <token>` on write endpoints.
+1. Client gets `window.Telegram.WebApp.initData`.
+2. Call `POST /auth/telegram`.
+3. Backend validates Telegram signature and upserts user in PostgreSQL.
+4. API returns JWT access token and refresh token.
+5. Send `Authorization: Bearer <token>` on protected endpoints.
 
 ## Endpoints
 - `GET /health`
-- `POST /api/auth/firebase-login`
-- `POST /api/auth/dev-login` (dev only)
-- `GET /api/auth/me`
+- `POST /auth/telegram`
+- `POST /auth/refresh`
+- `POST /auth/logout`
+- `GET /auth/me`
+- `GET /users/me/profile`
+- `PATCH /users/me/profile`
+- `GET /wallet/balance`
+- `GET /wallet/transactions`
+- `POST /wallet/daily-bonus`
+- `GET /referrals/me`
+- `POST /referrals/apply`
+- `GET /competitions`
+- `GET /competitions/{id}`
+- `GET /competitions/{id}/leaderboard`
+- `GET /admin/users`
+- `GET /admin/users/{id}`
+- `POST /admin/users/{id}/adjust-balance`
+- `GET /admin/audit-logs`
 - `GET /api/locations`
 - `POST /api/locations`
 - `GET /api/competitions/city-ranking`

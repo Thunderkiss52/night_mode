@@ -1,24 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
+from fastapi import HTTPException
 
-from app.infrastructure.firebase_admin import get_firestore_client
-
-try:
-    from firebase_admin import firestore
-except Exception:  # pragma: no cover
-    firestore = None
+from app.db import SessionLocal
+from app.infrastructure.repositories.night_repository import NightRepository
 
 
 class TelegramUserStore:
-    def __init__(self) -> None:
-        self.db = get_firestore_client()
-        self._memory_users: dict[int, dict[str, Any]] = {}
-
-    @property
-    def using_firestore(self) -> bool:
-        return self.db is not None and firestore is not None
+    def _repository(self) -> tuple:
+        db = SessionLocal()
+        return db, NightRepository(db=db)
 
     def upsert_user(
         self,
@@ -27,112 +18,46 @@ class TelegramUserStore:
         first_name: str | None,
         last_name: str | None,
     ) -> None:
-        now = datetime.now(timezone.utc)
-
-        if not self.using_firestore:
-            current = self._memory_users.get(user_id, {})
-            current.update(
-                {
-                    'user_id': user_id,
-                    'username': username,
-                    'first_name': first_name or '',
-                    'last_name': last_name or '',
-                    'last_seen_at': now,
-                }
+        db, repository = self._repository()
+        try:
+            repository.upsert_telegram_user(
+                telegram_user_id=user_id,
+                username=username,
+                first_name=first_name,
+                last_name=last_name,
             )
-            current.setdefault('created_at', now)
-            current.setdefault('referrals', 0)
-            current.setdefault('referred_by', None)
-            self._memory_users[user_id] = current
-            return
-
-        ref = self.db.collection('tg_users').document(str(user_id))
-        snapshot = ref.get()
-        payload: dict[str, Any] = {
-            'user_id': user_id,
-            'username': username,
-            'first_name': first_name or '',
-            'last_name': last_name or '',
-            'last_seen_at': now,
-        }
-        if not snapshot.exists:
-            payload['created_at'] = now
-            payload['referrals'] = 0
-            payload['referred_by'] = None
-
-        ref.set(
-            payload,
-            merge=True,
-        )
+            repository.commit()
+        finally:
+            db.close()
 
     def apply_referral(self, user_id: int, referrer_id: int) -> bool:
         if user_id == referrer_id:
             return False
 
-        now = datetime.now(timezone.utc)
-
-        if not self.using_firestore:
-            user = self._memory_users.setdefault(
-                user_id,
-                {
-                    'user_id': user_id,
-                    'created_at': now,
-                    'last_seen_at': now,
-                    'referrals': 0,
-                    'referred_by': None,
-                },
+        db, repository = self._repository()
+        try:
+            user, _ = repository.upsert_telegram_user(telegram_user_id=user_id)
+            repository.upsert_telegram_user(telegram_user_id=referrer_id)
+            result = repository.apply_referral(
+                user_id=user.id,
+                referrer_telegram_id=referrer_id,
+                source='telegram_bot',
             )
-            if user.get('referred_by') is not None:
-                return False
-
-            user['referred_by'] = referrer_id
-            referrer = self._memory_users.setdefault(
-                referrer_id,
-                {
-                    'user_id': referrer_id,
-                    'created_at': now,
-                    'last_seen_at': now,
-                    'referrals': 0,
-                    'referred_by': None,
-                },
-            )
-            referrer['referrals'] = int(referrer.get('referrals', 0)) + 1
-            return True
-
-        users = self.db.collection('tg_users')
-        user_ref = users.document(str(user_id))
-        user_snapshot = user_ref.get()
-        user_data = user_snapshot.to_dict() if user_snapshot.exists else {}
-        if user_data.get('referred_by') is not None:
+            repository.commit()
+            return result.ok
+        except HTTPException:
+            repository.rollback()
             return False
-
-        user_ref.set(
-            {
-                'user_id': user_id,
-                'referred_by': referrer_id,
-                'updated_at': now,
-            },
-            merge=True,
-        )
-
-        referrer_ref = users.document(str(referrer_id))
-        referrer_ref.set(
-            {
-                'user_id': referrer_id,
-                'referrals': firestore.Increment(1),
-                'updated_at': now,
-            },
-            merge=True,
-        )
-        return True
+        finally:
+            db.close()
 
     def get_referral_count(self, user_id: int) -> int:
-        if not self.using_firestore:
-            return int(self._memory_users.get(user_id, {}).get('referrals', 0))
-
-        snapshot = self.db.collection('tg_users').document(str(user_id)).get()
-        if not snapshot.exists:
-            return 0
-
-        raw = snapshot.to_dict() or {}
-        return int(raw.get('referrals', 0))
+        db, repository = self._repository()
+        try:
+            user = repository.get_user_by_telegram_id(user_id)
+            if user is None:
+                return 0
+            stats = repository.get_referral_stats(user.id)
+            return stats.referrals_count
+        finally:
+            db.close()

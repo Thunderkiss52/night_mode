@@ -8,8 +8,8 @@ from app.core.config import settings
 
 app = FastAPI(
     title=settings.app_name,
-    version='0.3.0',
-    description='Night Mode API (Clean Architecture + FastAPI + Firebase Admin + JWT)'
+    version=settings.app_version,
+    description='Night Mode API (FastAPI + PostgreSQL + Telegram auth + JWT)'
 )
 
 app.add_middleware(

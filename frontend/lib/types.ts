@@ -21,7 +21,7 @@ export type UserItem = {
 export type UserProfile = {
   uid: string;
   name: string;
-  photo: string;
+  photo?: string;
   city: string;
   country: string;
   socials: {
