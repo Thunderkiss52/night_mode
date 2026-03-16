@@ -1,11 +1,14 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { GoogleMap, InfoWindow, MarkerF, useJsApiLoader } from '@react-google-maps/api';
-import type { UserLocation } from '@/lib/types';
+import type { CityMapMarker } from '@/lib/types';
 
 type Props = {
-  markers: UserLocation[];
+  markers: CityMapMarker[];
+  selectedCityId?: string | null;
+  onSelectCity?: (cityId: string) => void;
   onAddPoint?: (lat: number, lng: number) => void;
 };
 
@@ -19,10 +22,110 @@ const center = {
   lng: 35
 };
 
-export default function WorldMap({ markers, onAddPoint }: Props) {
-  const [active, setActive] = useState<UserLocation | null>(null);
+const LeafletCityMap = dynamic(() => import('@/components/map/LeafletCityMap'), {
+  ssr: false,
+  loading: () => <div className="nm-card rounded-[1.6rem] p-5 text-sm text-gold-400">Загрузка карты...</div>
+});
+
+type GoogleCityMapProps = {
+  markers: CityMapMarker[];
+  active: CityMapMarker | null;
+  onSetActive: (marker: CityMapMarker | null) => void;
+  onSelectCity?: (cityId: string) => void;
+  onAddPoint?: (lat: number, lng: number) => void;
+  googleApiKey: string;
+};
+
+function GoogleCityMap({
+  markers,
+  active,
+  onSetActive,
+  onSelectCity,
+  onAddPoint,
+  googleApiKey
+}: GoogleCityMapProps) {
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: googleApiKey
+  });
+
+  if (!isLoaded) {
+    return <div className="nm-card rounded-[1.6rem] p-5 text-sm text-gold-400">Загрузка карты...</div>;
+  }
+
+  return (
+    <GoogleMap
+      mapContainerStyle={mapContainerStyle}
+      center={center}
+      zoom={2}
+      options={{
+        disableDefaultUI: false,
+        styles: [
+          {
+            elementType: 'geometry',
+            stylers: [{ color: '#0b0b0b' }]
+          },
+          {
+            elementType: 'labels.text.fill',
+            stylers: [{ color: '#d4af37' }]
+          }
+        ]
+      }}
+      onClick={(event) => {
+        const lat = event.latLng?.lat();
+        const lng = event.latLng?.lng();
+        if (onAddPoint && typeof lat === 'number' && typeof lng === 'number') {
+          onAddPoint(lat, lng);
+        }
+      }}
+    >
+      {markers.map((marker) => (
+        <MarkerF
+          key={marker.id}
+          position={{ lat: marker.lat, lng: marker.lng }}
+          onClick={() => {
+            onSetActive(marker);
+            onSelectCity?.(marker.id);
+          }}
+          icon="/images/gold-marker.svg"
+          label={
+            marker.members.length > 1
+              ? {
+                  text: String(marker.members.length),
+                  color: '#050505',
+                  fontWeight: '700'
+                }
+              : undefined
+          }
+        />
+      ))}
+
+      {active ? (
+        <InfoWindow position={{ lat: active.lat, lng: active.lng }} onCloseClick={() => onSetActive(null)}>
+          <div className="text-black">
+            <p className="font-semibold">
+              {active.city}, {active.country}
+            </p>
+            <p className="text-xs">{active.members.length} профилей в городе</p>
+            <p className="mt-1 text-xs text-black/70">
+              {active.members
+                .slice(0, 3)
+                .map((member) => member.name)
+                .join(', ')}
+              {active.members.length > 3 ? '…' : ''}
+            </p>
+          </div>
+        </InfoWindow>
+      ) : null}
+    </GoogleMap>
+  );
+}
+
+export default function WorldMap({ markers, selectedCityId, onSelectCity, onAddPoint }: Props) {
+  const [active, setActive] = useState<CityMapMarker | null>(null);
   const [countryFilter, setCountryFilter] = useState<string>('all');
   const [cityFilter, setCityFilter] = useState<string>('all');
+  const googleApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() || '';
 
   const countries = useMemo(
     () => ['all', ...Array.from(new Set(markers.map((m) => m.country))).sort()],
@@ -44,18 +147,14 @@ export default function WorldMap({ markers, onAddPoint }: Props) {
     [markers, countryFilter, cityFilter]
   );
 
-  const { isLoaded } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''
-  });
+  useEffect(() => {
+    if (!selectedCityId) {
+      return;
+    }
 
-  if (!process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY) {
-    return (
-      <div className="nm-card rounded-[1.6rem] p-5 text-sm text-gold-400">
-        Добавьте `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` в `.env.local`, чтобы включить карту Google Maps.
-      </div>
-    );
-  }
+    const selectedMarker = markers.find((marker) => marker.id === selectedCityId) || null;
+    setActive(selectedMarker);
+  }, [markers, selectedCityId]);
 
   return (
     <section className="space-y-3">
@@ -88,54 +187,22 @@ export default function WorldMap({ markers, onAddPoint }: Props) {
         </select>
       </div>
 
-      {isLoaded ? (
-        <GoogleMap
-          mapContainerStyle={mapContainerStyle}
-          center={center}
-          zoom={2}
-          options={{
-            disableDefaultUI: false,
-            styles: [
-              {
-                elementType: 'geometry',
-                stylers: [{ color: '#0b0b0b' }]
-              },
-              {
-                elementType: 'labels.text.fill',
-                stylers: [{ color: '#d4af37' }]
-              }
-            ]
-          }}
-          onClick={(event) => {
-            const lat = event.latLng?.lat();
-            const lng = event.latLng?.lng();
-            if (onAddPoint && typeof lat === 'number' && typeof lng === 'number') {
-              onAddPoint(lat, lng);
-            }
-          }}
-        >
-          {filteredMarkers.map((marker) => (
-            <MarkerF
-              key={marker.id}
-              position={{ lat: marker.lat, lng: marker.lng }}
-              onClick={() => setActive(marker)}
-              icon="/images/gold-marker.svg"
-            />
-          ))}
-
-          {active ? (
-            <InfoWindow position={{ lat: active.lat, lng: active.lng }} onCloseClick={() => setActive(null)}>
-              <div className="text-black">
-                <p className="font-semibold">{active.name}</p>
-                <p className="text-xs">
-                  {active.city}, {active.country}
-                </p>
-              </div>
-            </InfoWindow>
-          ) : null}
-        </GoogleMap>
+      {googleApiKey ? (
+        <GoogleCityMap
+          markers={filteredMarkers}
+          active={active}
+          onSetActive={setActive}
+          onSelectCity={onSelectCity}
+          onAddPoint={onAddPoint}
+          googleApiKey={googleApiKey}
+        />
       ) : (
-        <div className="nm-card rounded-[1.6rem] p-5 text-sm text-gold-400">Загрузка карты...</div>
+        <LeafletCityMap
+          markers={filteredMarkers}
+          selectedCityId={selectedCityId}
+          onSelectCity={onSelectCity}
+          onAddPoint={onAddPoint}
+        />
       )}
     </section>
   );

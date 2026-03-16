@@ -10,6 +10,15 @@ export type UserLocation = {
   createdAt: string;
 };
 
+export type CityMapMarker = {
+  id: string;
+  city: string;
+  country: string;
+  lat: number;
+  lng: number;
+  members: UserLocation[];
+};
+
 export type UserItem = {
   qrId: string;
   itemName: string;

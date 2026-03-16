@@ -204,6 +204,9 @@ cython_debug/
 # Keep frontend source lib tracked for this repository.
 !/frontend/lib/
 !/frontend/lib/**
+/frontend/node_modules/
+/frontend/.next/
+/frontend/tsconfig.tsbuildinfo
 
 # Marimo
 marimo/_static/
