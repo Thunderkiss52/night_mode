@@ -1,9 +1,12 @@
-FROM node:20-alpine AS deps
+FROM node:20-alpine AS base
+RUN apk add --no-cache libc6-compat
+
+FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
-FROM node:20-alpine AS builder
+FROM base AS builder
 WORKDIR /app
 ARG NEXT_PUBLIC_API_BASE_URL=
 ARG NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=
@@ -18,7 +21,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
