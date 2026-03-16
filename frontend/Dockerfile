@@ -30,7 +30,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 
-RUN addgroup -g 1001 nodejs && adduser -S nextjs -u 1001
+RUN groupadd --gid 1001 nodejs && useradd --uid 1001 --gid 1001 --create-home --shell /usr/sbin/nologin nextjs
 
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
