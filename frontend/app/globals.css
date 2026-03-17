@@ -45,6 +45,11 @@ body {
     linear-gradient(180deg, var(--bg-0) 0%, var(--bg-2) 100%);
 }
 
+::selection {
+  background: rgba(230, 196, 89, 0.28);
+  color: #fff7d1;
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -120,6 +125,168 @@ a {
       rgba(0, 0, 0, 0.22) 40px
     ),
     linear-gradient(180deg, rgba(8, 8, 8, 0.96) 0%, rgba(3, 3, 3, 0.98) 100%);
+}
+
+.nm-tap-arena {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 -24px 48px rgba(0, 0, 0, 0.38),
+    0 28px 80px rgba(0, 0, 0, 0.32);
+}
+
+.nm-tap-grid {
+  opacity: 0.35;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(circle at center, black 36%, transparent 88%);
+}
+
+@keyframes tap-ripple {
+  0% {
+    opacity: 0.44;
+    transform: scale(0.18);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+
+.nm-tap-ripple {
+  left: 50%;
+  top: 50%;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(230, 196, 89, 0.5);
+  background: radial-gradient(circle, rgba(230, 196, 89, 0.16) 0%, rgba(230, 196, 89, 0.02) 52%, transparent 72%);
+  animation: tap-ripple 720ms ease-out forwards;
+}
+
+@keyframes tap-core-breathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.06),
+      0 20px 44px rgba(0, 0, 0, 0.42),
+      0 0 64px rgba(212, 175, 55, 0.12);
+  }
+  50% {
+    transform: translateY(-2px) scale(1.012);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.08),
+      0 24px 60px rgba(0, 0, 0, 0.46),
+      0 0 86px rgba(212, 175, 55, 0.18);
+  }
+}
+
+@keyframes halo-spin {
+  from {
+    transform: rotate(0deg) scale(1);
+  }
+  to {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+.nm-tap-core {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  min-height: 220px;
+  width: min(72vw, 220px);
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.18), transparent 36%),
+    radial-gradient(circle at 50% 45%, rgba(243, 212, 111, 0.18), transparent 52%),
+    linear-gradient(180deg, rgba(23, 23, 23, 0.98) 0%, rgba(5, 5, 5, 0.98) 100%);
+  color: white;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    transform 140ms ease,
+    filter 140ms ease,
+    box-shadow 160ms ease;
+  animation: tap-core-breathe 2.8s ease-in-out infinite;
+}
+
+.nm-tap-core:hover {
+  filter: brightness(1.03);
+}
+
+.nm-tap-core:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.nm-tap-core--pressed {
+  transform: scale(0.965);
+}
+
+.nm-tap-core__halo {
+  position: absolute;
+  inset: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(230, 196, 89, 0.28);
+  background:
+    conic-gradient(
+      from 0deg,
+      rgba(230, 196, 89, 0) 0deg,
+      rgba(230, 196, 89, 0.42) 80deg,
+      rgba(255, 255, 255, 0.05) 170deg,
+      rgba(230, 196, 89, 0.26) 260deg,
+      rgba(230, 196, 89, 0) 360deg
+    );
+  filter: blur(0.2px);
+  animation: halo-spin 11s linear infinite;
+}
+
+.nm-tap-core__label,
+.nm-tap-core__value {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+}
+
+.nm-tap-core__label {
+  top: 40%;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.nm-tap-core__value {
+  top: calc(40% + 34px);
+  font-size: 2.2rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: var(--gold-1);
+  text-shadow: 0 0 24px rgba(212, 175, 55, 0.26);
+}
+
+@media (max-width: 640px) {
+  .nm-tap-core {
+    min-height: 180px;
+    width: min(78vw, 188px);
+  }
+
+  .nm-tap-core__label {
+    top: 38%;
+    font-size: 0.85rem;
+  }
+
+  .nm-tap-core__value {
+    top: calc(38% + 30px);
+    font-size: 1.8rem;
+  }
 }
 
 @keyframes fade-up {

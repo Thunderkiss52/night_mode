@@ -75,6 +75,15 @@ class Settings:
     telegram_webapp_url: str = os.getenv('TELEGRAM_WEBAPP_URL', '')
     telegram_webapp_title: str = os.getenv('TELEGRAM_WEBAPP_TITLE', 'NM Clicker')
     telegram_initdata_max_age_seconds: int = int(os.getenv('TELEGRAM_INITDATA_MAX_AGE_SECONDS', '86400'))
+    telegram_brand_slogan: str = os.getenv('TELEGRAM_BRAND_SLOGAN', 'Night mode: мир ночного комьюнити')
+    telegram_brand_subtitle: str = os.getenv(
+        'TELEGRAM_BRAND_SUBTITLE',
+        'Зарядись энергией ночи с лучшими людьми мира.',
+    )
+    telegram_brand_news_raw: str = os.getenv(
+        'TELEGRAM_BRAND_NEWS',
+        'Mini App запущен в продовом режиме||Кликер подключён к backend API||Карта Night Mode готова к новым городам',
+    )
 
     clicker_max_taps_per_second: int = int(os.getenv('CLICKER_MAX_TAPS_PER_SECOND', '10'))
     clicker_referral_bonus_levels: int = int(os.getenv('CLICKER_REFERRAL_BONUS_LEVELS', '3'))
@@ -91,6 +100,10 @@ class Settings:
     @property
     def auth_required(self) -> bool:
         return self.auth_mode.strip().lower() == 'required'
+
+    @property
+    def telegram_brand_news(self) -> list[str]:
+        return [item.strip() for item in self.telegram_brand_news_raw.split('||') if item.strip()]
 
 
 settings = Settings()

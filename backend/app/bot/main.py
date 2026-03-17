@@ -22,10 +22,32 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 router = Router()
 store = TelegramUserStore()
-WELCOME_TEXT: Final[str] = (
-    'NM Clicker bot is ready.\n'
-    'Use the button below to open the Mini App and start tapping.'
-)
+
+
+def _brand_news_lines() -> list[str]:
+    return settings.telegram_brand_news[:3]
+
+
+def _build_welcome_text() -> str:
+    slogan = settings.telegram_brand_slogan.strip() or 'Night mode: мир ночного комьюнити'
+    subtitle = settings.telegram_brand_subtitle.strip() or 'Зарядись энергией ночи с лучшими людьми мира.'
+    lines = [
+        slogan,
+        subtitle,
+        '',
+        'Открой Mini App кнопкой ниже и заходи в NM Clicker сразу внутри Telegram.'
+    ]
+
+    news = _brand_news_lines()
+    if news:
+        lines.append('')
+        lines.append('Последние новости бренда:')
+        lines.extend([f'• {item}' for item in news])
+
+    return '\n'.join(lines)
+
+
+WELCOME_TEXT: Final[str] = _build_welcome_text()
 
 
 def _parse_referrer(payload: str | None) -> int | None:
@@ -52,7 +74,7 @@ def _build_invite_link(user_id: int) -> str | None:
 
 def _build_share_link(user_id: int) -> str:
     invite_link = _build_invite_link(user_id)
-    params = {'text': 'Join NM Clicker in Telegram Mini App.'}
+    params = {'text': settings.telegram_brand_subtitle.strip() or 'Join NM Clicker in Telegram Mini App.'}
     if invite_link:
         params['url'] = invite_link
     else:
@@ -80,12 +102,12 @@ def _build_keyboard(user_id: int, start_param: str | None = None) -> InlineKeybo
         buttons.append(
             [
                 InlineKeyboardButton(
-                    text='Open NM Clicker',
+                    text='Открыть NM Clicker',
                     web_app=WebAppInfo(url=webapp_url),
                 )
             ]
         )
-    buttons.append([InlineKeyboardButton(text='Invite friend', url=_build_share_link(user_id))])
+    buttons.append([InlineKeyboardButton(text='Пригласить друга', url=_build_share_link(user_id))])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -110,12 +132,15 @@ async def start_handler(message: Message, command: CommandObject) -> None:
 
     lines = [WELCOME_TEXT]
     if referral_applied:
-        lines.append('Referral accepted.')
+        lines.append('')
+        lines.append('Реферальная связь подтверждена.')
     elif referrer_id is not None:
-        lines.append('Referral already used or invalid.')
+        lines.append('')
+        lines.append('Реферал уже использован или недействителен.')
 
     if not settings.telegram_webapp_url.strip():
-        lines.append('Set TELEGRAM_WEBAPP_URL to enable direct Mini App open button.')
+        lines.append('')
+        lines.append('Укажи TELEGRAM_WEBAPP_URL, чтобы бот открывал Mini App напрямую.')
 
     await message.answer(
         '\n'.join(lines),
@@ -133,17 +158,30 @@ async def ref_handler(message: Message) -> None:
     referrals = store.get_referral_count(user_id)
     link_line = invite_link or f'/start ref_{user_id}'
     await message.answer(
-        f'Your referral link:\n{link_line}\n\nReferrals: {referrals}',
+        f'Твоя реферальная ссылка:\n{link_line}\n\nРефералов: {referrals}',
         reply_markup=_build_keyboard(user_id),
     )
+
+
+@router.message(Command('news'))
+async def news_handler(message: Message) -> None:
+    news = _brand_news_lines()
+    if news:
+        lines = ['Последние новости бренда:']
+        lines.extend([f'• {item}' for item in news])
+    else:
+        lines = ['Пока нет опубликованных новостей бренда.']
+
+    await message.answer('\n'.join(lines))
 
 
 @router.message(Command('help'))
 async def help_handler(message: Message) -> None:
     await message.answer(
-        '/start - open Mini App\n'
-        '/ref - get your referral link\n'
-        '/help - commands list'
+        '/start - открыть Mini App\n'
+        '/ref - получить реферальную ссылку\n'
+        '/news - последние новости бренда\n'
+        '/help - список команд'
     )
 
 

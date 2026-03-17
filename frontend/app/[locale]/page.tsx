@@ -37,7 +37,7 @@ export default async function HomePage({ params }: { params: { locale: string } 
 
       <section className="space-y-3">
         <h2 className="text-2xl font-black uppercase tracking-[0.2em] text-gold-400">{t.home.mapTitle}</h2>
-        <MapClient initialMarkers={[]} />
+        <MapClient initialMarkers={[]} locale={locale} />
       </section>
     </div>
   );

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiUrl } from '@/lib/api';
-import { fetchCurrentUser, getStoredApiUid } from '@/lib/auth-client';
+import { fetchCurrentUser, getStoredApiUid, loginWithTelegram, waitForTelegramInitData } from '@/lib/auth-client';
 import ItemsGrid from '@/components/profile/ItemsGrid';
 import ProfileCard from '@/components/profile/ProfileCard';
 import AuthSessionPanel from '@/components/profile/AuthSessionPanel';
@@ -47,26 +47,54 @@ function buildProfile(uid: string, locations: UserLocation[]): UserProfile {
 export default function ProfileClient() {
   const [profile, setProfile] = useState<UserProfile>(() => buildProfile(getStoredApiUid(), []));
   const [locations, setLocations] = useState<UserLocation[]>([]);
-  const [status, setStatus] = useState('Загружаем профиль из API...');
+  const [status, setStatus] = useState('Собираем профиль Night Mode...');
+  const [showDebugAuth, setShowDebugAuth] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    setShowDebugAuth(isLocal || params.get('debugAuth') === '1');
+  }, []);
 
   useEffect(() => {
     let active = true;
+
+    async function ensureTelegramSession() {
+      try {
+        return await fetchCurrentUser();
+      } catch {
+        const initData = await waitForTelegramInitData(1800, 120);
+        if (!initData) {
+          throw new Error('telegram-init-data-missing');
+        }
+
+        await loginWithTelegram({ initData });
+        return fetchCurrentUser();
+      }
+    }
 
     async function loadProfile() {
       const fallbackUid = getStoredApiUid();
 
       try {
-        const [currentUser, locationsResponse] = await Promise.all([
-          fetchCurrentUser(),
+        const [currentUser, locationsResponse] = await Promise.allSettled([
+          ensureTelegramSession(),
           fetch(apiUrl('/api/locations'))
         ]);
-        const locationsData = locationsResponse.ok
-          ? ((await locationsResponse.json()) as { locations?: LocationApi[] })
-          : null;
 
         if (!active) return;
 
-        const uid = currentUser?.id || fallbackUid;
+        const resolvedUser = currentUser.status === 'fulfilled' ? currentUser.value : null;
+        const locationsData =
+          locationsResponse.status === 'fulfilled' && locationsResponse.value.ok
+            ? ((await locationsResponse.value.json()) as { locations?: LocationApi[] })
+            : null;
+
+        const uid = resolvedUser?.id || fallbackUid;
         const allLocations = (locationsData?.locations || []).map(fromApiLocation);
         const ownLocations = allLocations
           .filter((item) => item.uid === uid)
@@ -75,24 +103,30 @@ export default function ProfileClient() {
         setProfile({
           uid,
           name:
-            [currentUser.first_name, currentUser.last_name].filter(Boolean).join(' ').trim() ||
-            currentUser.username ||
+            [resolvedUser?.first_name, resolvedUser?.last_name].filter(Boolean).join(' ').trim() ||
+            resolvedUser?.username ||
             ownLocations[0]?.name ||
             uid,
-          photo: currentUser.photo_url || undefined,
+          photo: resolvedUser?.photo_url || undefined,
           city: ownLocations[0]?.city || 'Unknown city',
           country: ownLocations[0]?.country || 'Unknown country',
           socials: {}
         });
         setLocations(ownLocations);
         setStatus(
-          'Профиль загружен из backend auth/API. Данные о мерче пока не поддерживаются отдельным endpoint.'
+          resolvedUser
+            ? 'Профиль синхронизирован с Night Mode. Если хочешь больше персонализации, отметь свой город на карте.'
+            : 'Открой профиль внутри Telegram Mini App, и аккаунт подтянется автоматически.'
         );
-      } catch {
+      } catch (error) {
         if (!active) return;
         setProfile(buildProfile(fallbackUid, []));
         setLocations([]);
-        setStatus('Backend недоступен. Доступны только локально сохранённый UID и пустые секции.');
+        setStatus(
+          error instanceof Error && error.message === 'telegram-init-data-missing'
+            ? 'Открой этот экран из Telegram Mini App, чтобы Night Mode подтянул твой профиль автоматически.'
+            : 'Профиль временно работает в офлайн-режиме. Повтори вход чуть позже.'
+        );
       }
     }
 
@@ -109,7 +143,7 @@ export default function ProfileClient() {
       <section className="nm-card rounded-2xl p-4 text-sm text-white/68">
         {status}
       </section>
-      <AuthSessionPanel />
+      {showDebugAuth ? <AuthSessionPanel /> : null}
 
       <section className="nm-card rounded-2xl p-5">
         <h3 className="text-xl font-bold text-gold-400">Мои точки</h3>
@@ -122,7 +156,9 @@ export default function ProfileClient() {
             ))}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-white/60">У текущего пользователя пока нет точек в `/api/locations`.</p>
+          <p className="mt-3 text-sm text-white/60">
+            Пока здесь пусто. Отметь свой город на карте Night Mode, и он появится в профиле.
+          </p>
         )}
       </section>
 

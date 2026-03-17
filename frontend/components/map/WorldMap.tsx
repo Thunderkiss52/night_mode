@@ -3,13 +3,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { GoogleMap, InfoWindow, MarkerF, useJsApiLoader } from '@react-google-maps/api';
+import type { Locale } from '@/lib/i18n';
 import type { CityMapMarker } from '@/lib/types';
 
 type Props = {
+  locale: Locale;
   markers: CityMapMarker[];
   selectedCityId?: string | null;
   onSelectCity?: (cityId: string) => void;
   onAddPoint?: (lat: number, lng: number) => void;
+  defaultCountry?: string;
+  defaultCity?: string;
 };
 
 const mapContainerStyle = {
@@ -28,6 +32,7 @@ const LeafletCityMap = dynamic(() => import('@/components/map/LeafletCityMap'), 
 });
 
 type GoogleCityMapProps = {
+  locale: Locale;
   markers: CityMapMarker[];
   active: CityMapMarker | null;
   onSetActive: (marker: CityMapMarker | null) => void;
@@ -37,6 +42,7 @@ type GoogleCityMapProps = {
 };
 
 function GoogleCityMap({
+  locale,
   markers,
   active,
   onSetActive,
@@ -106,7 +112,23 @@ function GoogleCityMap({
             <p className="font-semibold">
               {active.city}, {active.country}
             </p>
-            <p className="text-xs">{active.members.length} профилей в городе</p>
+            <p className="text-xs">
+              {active.members.length > 0
+                ? locale === 'ru'
+                  ? `${active.members.length} профилей в городе`
+                  : locale === 'en'
+                    ? `${active.members.length} profiles in this city`
+                    : locale === 'am'
+                      ? `${active.members.length} պրոֆիլ այս քաղաքում`
+                      : `${active.members.length} профиль осы қалада`
+                : locale === 'ru'
+                  ? 'Город готов для первых участников'
+                  : locale === 'en'
+                    ? 'Ready for the first Night Mode members'
+                    : locale === 'am'
+                      ? 'Պատրաստ է առաջին Night Mode մասնակիցների համար'
+                      : 'Алғашқы Night Mode адамдарына дайын'}
+            </p>
             <p className="mt-1 text-xs text-black/70">
               {active.members
                 .slice(0, 3)
@@ -121,10 +143,50 @@ function GoogleCityMap({
   );
 }
 
-export default function WorldMap({ markers, selectedCityId, onSelectCity, onAddPoint }: Props) {
+const copy: Record<
+  Locale,
+  {
+    allCountries: string;
+    allCities: string;
+    loading: string;
+  }
+> = {
+  ru: {
+    allCountries: 'Все страны',
+    allCities: 'Все города',
+    loading: 'Загрузка карты...'
+  },
+  en: {
+    allCountries: 'All countries',
+    allCities: 'All cities',
+    loading: 'Loading map...'
+  },
+  am: {
+    allCountries: 'Բոլոր երկրները',
+    allCities: 'Բոլոր քաղաքները',
+    loading: 'Քարտեզը բեռնվում է...'
+  },
+  kk: {
+    allCountries: 'Барлық елдер',
+    allCities: 'Барлық қалалар',
+    loading: 'Карта жүктелуде...'
+  }
+};
+
+export default function WorldMap({
+  locale,
+  markers,
+  selectedCityId,
+  onSelectCity,
+  onAddPoint,
+  defaultCountry,
+  defaultCity
+}: Props) {
+  const t = copy[locale];
   const [active, setActive] = useState<CityMapMarker | null>(null);
   const [countryFilter, setCountryFilter] = useState<string>('all');
   const [cityFilter, setCityFilter] = useState<string>('all');
+  const [filtersInitialized, setFiltersInitialized] = useState(false);
   const googleApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() || '';
 
   const countries = useMemo(
@@ -156,6 +218,21 @@ export default function WorldMap({ markers, selectedCityId, onSelectCity, onAddP
     setActive(selectedMarker);
   }, [markers, selectedCityId]);
 
+  useEffect(() => {
+    if (filtersInitialized || countries.length === 0) {
+      return;
+    }
+
+    const initialCountry = defaultCountry && countries.includes(defaultCountry) ? defaultCountry : 'all';
+    const filteredByCountry = initialCountry === 'all' ? markers : markers.filter((marker) => marker.country === initialCountry);
+    const nextCities = ['all', ...Array.from(new Set(filteredByCountry.map((marker) => marker.city))).sort()];
+    const initialCity = defaultCity && nextCities.includes(defaultCity) ? defaultCity : 'all';
+
+    setCountryFilter(initialCountry);
+    setCityFilter(initialCity);
+    setFiltersInitialized(true);
+  }, [countries, defaultCity, defaultCountry, filtersInitialized, markers]);
+
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
@@ -169,7 +246,7 @@ export default function WorldMap({ markers, selectedCityId, onSelectCity, onAddP
         >
           {countries.map((country) => (
             <option key={country} value={country}>
-              {country === 'all' ? 'Все страны' : country}
+              {country === 'all' ? t.allCountries : country}
             </option>
           ))}
         </select>
@@ -181,7 +258,7 @@ export default function WorldMap({ markers, selectedCityId, onSelectCity, onAddP
         >
           {cities.map((city) => (
             <option key={city} value={city}>
-              {city === 'all' ? 'Все города' : city}
+              {city === 'all' ? t.allCities : city}
             </option>
           ))}
         </select>
@@ -189,6 +266,7 @@ export default function WorldMap({ markers, selectedCityId, onSelectCity, onAddP
 
       {googleApiKey ? (
         <GoogleCityMap
+          locale={locale}
           markers={filteredMarkers}
           active={active}
           onSetActive={setActive}

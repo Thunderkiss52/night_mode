@@ -15,7 +15,7 @@ export default async function MapPage({ params }: { params: { locale: string } }
     <div className="space-y-4">
       <h1 className="text-3xl font-black uppercase tracking-[0.22em] text-gold-400">{t.map.title}</h1>
       <p className="max-w-2xl text-white/72">{t.map.subtitle}</p>
-      <MapClient initialMarkers={[]} />
+      <MapClient initialMarkers={[]} locale={locale} />
     </div>
   );
 }

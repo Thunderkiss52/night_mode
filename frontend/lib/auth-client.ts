@@ -105,6 +105,11 @@ export async function waitForTelegramInitData(timeoutMs = 4000, intervalMs = 150
 async function readErrorDetail(response: Response, fallback: string): Promise<string> {
   const raw = await response.text();
   if (!raw.trim()) return fallback;
+  const contentType = response.headers.get('content-type') || '';
+
+  if (contentType.includes('text/html') || raw.toLowerCase().includes('<html')) {
+    return 'Night Mode gateway is temporarily unavailable. Please try again in a moment.';
+  }
 
   try {
     const parsed = JSON.parse(raw) as { detail?: string };
