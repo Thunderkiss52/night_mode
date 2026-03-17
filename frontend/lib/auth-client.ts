@@ -90,6 +90,30 @@ export function getTelegramInitData(): string {
   return tg.Telegram?.WebApp?.initData?.trim() || '';
 }
 
+export async function waitForTelegramInitData(timeoutMs = 4000, intervalMs = 150): Promise<string> {
+  const startedAt = Date.now();
+  let initData = getTelegramInitData();
+
+  while (!initData && Date.now() - startedAt < timeoutMs) {
+    await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
+    initData = getTelegramInitData();
+  }
+
+  return initData;
+}
+
+async function readErrorDetail(response: Response, fallback: string): Promise<string> {
+  const raw = await response.text();
+  if (!raw.trim()) return fallback;
+
+  try {
+    const parsed = JSON.parse(raw) as { detail?: string };
+    if (parsed.detail?.trim()) return parsed.detail;
+  } catch {}
+
+  return raw.slice(0, 200);
+}
+
 export async function loginWithTelegram(payload: {
   initData?: string;
   referralCode?: string;
@@ -118,8 +142,12 @@ export async function loginWithTelegram(payload: {
     body: JSON.stringify(body)
   });
 
+  if (!response.ok) {
+    throw new Error(await readErrorDetail(response, 'Telegram auth failed'));
+  }
+
   const data = (await response.json()) as AuthPayload | { detail?: string };
-  if (!response.ok || !('access_token' in data)) {
+  if (!('access_token' in data)) {
     throw new Error(('detail' in data && data.detail) || 'Telegram auth failed');
   }
 
@@ -135,8 +163,13 @@ export async function refreshAccessToken() {
     body: JSON.stringify({})
   });
 
+  if (!response.ok) {
+    clearStoredSession();
+    throw new Error(await readErrorDetail(response, 'Refresh failed'));
+  }
+
   const data = (await response.json()) as AuthPayload | { detail?: string };
-  if (!response.ok || !('access_token' in data)) {
+  if (!('access_token' in data)) {
     clearStoredSession();
     throw new Error(('detail' in data && data.detail) || 'Refresh failed');
   }

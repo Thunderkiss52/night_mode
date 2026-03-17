@@ -8,7 +8,8 @@ import {
   getTelegramInitData,
   loginWithTelegram,
   logoutSession,
-  refreshAccessToken
+  refreshAccessToken,
+  waitForTelegramInitData
 } from '@/lib/auth-client';
 
 export default function AuthSessionPanel() {
@@ -18,6 +19,7 @@ export default function AuthSessionPanel() {
   const [lastName, setLastName] = useState('Mode');
   const [referralCode, setReferralCode] = useState('');
   const [message, setMessage] = useState('');
+  const [initDataPreview, setInitDataPreview] = useState(() => (getTelegramInitData() ? 'present' : 'missing'));
   const [tokenPreview, setTokenPreview] = useState(() => {
     const token = getStoredApiToken();
     return token ? `${token.slice(0, 24)}...` : 'not set';
@@ -36,7 +38,13 @@ export default function AuthSessionPanel() {
     setMessage('');
 
     try {
-      const initData = getTelegramInitData();
+      const initData = await waitForTelegramInitData();
+      setInitDataPreview(initData ? 'present' : 'missing');
+      const allowDevFallback = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+      if (!initData && !allowDevFallback) {
+        setMessage('Telegram initData is missing. Open this page from the Telegram Mini App button, not from the browser.');
+        return;
+      }
       const data = await loginWithTelegram(
         initData
           ? { initData, referralCode }
@@ -50,8 +58,8 @@ export default function AuthSessionPanel() {
       );
       syncPreview();
       setMessage(`JWT сохранен (user: ${data.user?.id || getStoredApiUid()})`);
-    } catch {
-      setMessage('Telegram auth failed');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Telegram auth failed');
     }
   };
 
@@ -95,6 +103,7 @@ export default function AuthSessionPanel() {
       <h3 className="text-xl font-bold text-gold-400">API Session</h3>
       <p className="mt-1 text-xs text-zinc-300">Текущий JWT: {tokenPreview}</p>
       <p className="mt-1 text-xs text-zinc-300">Текущий UID: {storedUid}</p>
+      <p className="mt-1 text-xs text-zinc-300">Telegram initData: {initDataPreview}</p>
 
       <form className="mt-4 grid gap-2 sm:grid-cols-2" onSubmit={loginTelegram}>
         <input
