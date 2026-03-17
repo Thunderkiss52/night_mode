@@ -234,7 +234,8 @@ function saveClickerSession(token: string, uid: string) {
 }
 
 function getTelegramUrl() {
-  const username = (process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || 'nightmode').replace(/^@/, '').trim();
+  const username = (process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || '').replace(/^@/, '').trim();
+  if (!username) return '';
   return `https://t.me/${username}?startapp=clicker`;
 }
 
@@ -249,6 +250,18 @@ function getTelegramInitData() {
     };
   };
   return tg.Telegram?.WebApp?.initData?.trim() || '';
+}
+
+async function waitForTelegramInitData(timeoutMs = 4000, intervalMs = 150) {
+  const startedAt = Date.now();
+  let initData = getTelegramInitData();
+
+  while (!initData && Date.now() - startedAt < timeoutMs) {
+    await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
+    initData = getTelegramInitData();
+  }
+
+  return initData;
 }
 
 function getOrCreateDevTelegramId() {
@@ -271,6 +284,7 @@ function formatDate(value: string | null, locale: Locale) {
 
 export default function NmClickerMiniApp({ locale }: Props) {
   const t = copy[locale];
+  const telegramUrl = getTelegramUrl();
   const [token, setToken] = useState<string | null>(null);
   const [state, setState] = useState<ClickerState | null>(null);
   const [leaderboard, setLeaderboard] = useState<ClickerLeaderboardItem[]>([]);
@@ -295,17 +309,20 @@ export default function NmClickerMiniApp({ locale }: Props) {
   };
 
   const openTelegram = () => {
-    const url = getTelegramUrl();
+    if (!telegramUrl) {
+      setStatusText('NEXT_PUBLIC_TELEGRAM_BOT_USERNAME is not configured.');
+      return;
+    }
     const tg = window as Window & {
       Telegram?: { WebApp?: { openTelegramLink?: (value: string) => void } };
     };
 
     if (tg.Telegram?.WebApp?.openTelegramLink) {
-      tg.Telegram.WebApp.openTelegramLink(url);
+      tg.Telegram.WebApp.openTelegramLink(telegramUrl);
       return;
     }
 
-    window.open(url, '_blank', 'noopener,noreferrer');
+    window.open(telegramUrl, '_blank', 'noopener,noreferrer');
   };
 
   const loadLeaderboard = async (currentToken: string | null = token) => {
@@ -324,7 +341,7 @@ export default function NmClickerMiniApp({ locale }: Props) {
     setStatusText(t.connectHint);
 
     try {
-      const initData = getTelegramInitData();
+      const initData = await waitForTelegramInitData();
       const payload = initData
         ? { init_data: initData }
         : {
@@ -664,7 +681,7 @@ export default function NmClickerMiniApp({ locale }: Props) {
                 Telegram ID: {state?.telegram_user_id || '—'}
               </p>
               <div className="mt-4 flex flex-wrap gap-3">
-                <button type="button" onClick={openTelegram} className="nm-pill rounded-full border-gold-500/25 px-4 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-gold-400">
+                <button type="button" onClick={openTelegram} disabled={!telegramUrl} className="nm-pill rounded-full border-gold-500/25 px-4 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-gold-400 disabled:cursor-not-allowed disabled:opacity-50">
                   {t.openTelegram}
                 </button>
                 <button type="button" onClick={connectClicker} disabled={isBusy} className="nm-pill rounded-full px-4 py-3 text-sm font-semibold uppercase tracking-[0.14em] text-white/80 disabled:cursor-not-allowed disabled:opacity-50">
