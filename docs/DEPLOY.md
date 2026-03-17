@@ -27,6 +27,9 @@
 3. Run:
    - `docker compose up --build -d`
 4. Open `http://<server-ip>`.
+5. For Telegram Mini App set:
+   - `TELEGRAM_WEBAPP_URL=https://<domain>/ru/competitions`
+   - `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME=<bot_username>`
 
 ## Production checklist
 - Use strong `JWT_SECRET`.

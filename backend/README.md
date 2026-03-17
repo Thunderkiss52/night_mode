@@ -25,9 +25,14 @@ Swagger UI: `http://localhost:8000/docs`
 1. Fill env vars in `backend/.env`:
    - `TELEGRAM_BOT_TOKEN`
    - `TELEGRAM_BOT_USERNAME` (without `@`)
-   - `TELEGRAM_WEBAPP_URL` (Mini App URL)
+   - `TELEGRAM_WEBAPP_URL` (Mini App URL, for example `https://<domain>/ru/competitions`)
 2. Run polling bot:
    - `python -m app.bot.main`
+
+## Telegram bot in Docker Compose
+- Service name: `bot`
+- Start together with the stack: `docker compose up --build -d backend bot frontend gateway`
+- Logs: `docker logs -f night_mode_bot`
 
 Bot commands:
 - `/start` opens Mini App button and applies `ref_<telegram_user_id>` payload.
