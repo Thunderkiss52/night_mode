@@ -65,6 +65,23 @@ services:
       - '3000'
     restart: unless-stopped
 
+  neon-architect:
+    build:
+      context: ../land_for_sales
+      dockerfile: Dockerfile
+    container_name: neon_architect_app
+    env_file:
+      - ../land_for_sales/.env
+    expose:
+      - '8787'
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/api/neon-architect/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
   gateway:
     image: nginx:1.27-alpine
     container_name: night_mode_gateway
@@ -72,6 +89,8 @@ services:
       frontend:
         condition: service_healthy
       backend:
+        condition: service_healthy
+      neon-architect:
         condition: service_healthy
     ports:
       - '${GATEWAY_HOST_BIND:-0.0.0.0}:${GATEWAY_HOST_PORT:-80}:80'
