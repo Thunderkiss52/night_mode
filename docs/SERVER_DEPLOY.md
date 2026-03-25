@@ -4,7 +4,7 @@
 
 ## 1. Что нужно заранее
 - VPS с публичным IP
-- Домен (например `nightmode.example.com`)
+- Домен (например `econom.am`)
 - Доступ по SSH
 - Git-репозиторий с проектом
 - PostgreSQL credentials
@@ -70,7 +70,7 @@ APP_NAME=Night Mode API
 APP_ENV=production
 APP_HOST=0.0.0.0
 APP_PORT=8000
-CORS_ORIGINS=https://nightmode.example.com
+CORS_ORIGINS=https://econom.am
 
 AUTH_MODE=required
 DATABASE_URL=postgresql+psycopg://night_mode:<PASSWORD>@db:5432/night_mode
@@ -80,7 +80,7 @@ JWT_EXPIRE_MINUTES=15
 JWT_REFRESH_EXPIRE_DAYS=30
 TELEGRAM_BOT_TOKEN=<BOT_TOKEN>
 TELEGRAM_BOT_USERNAME=<BOT_USERNAME>
-TELEGRAM_WEBAPP_URL=https://nightmode.example.com/competitions
+TELEGRAM_WEBAPP_URL=https://econom.am/competitions
 ```
 
 ## 6. Первый запуск
@@ -109,44 +109,22 @@ sudo ufw enable
 sudo ufw status
 ```
 
-## 8. HTTPS (рекомендуется)
+## 8. HTTPS
 
-Текущий compose использует nginx на `:80`. Для SSL есть два варианта:
+Compose теперь поднимает gateway на `:80` и `:443` через Caddy и сам получает/обновляет Let's Encrypt сертификат для `econom.am`.
 
-1. Поставить Caddy/Nginx Proxy Manager перед текущим nginx-контейнером.
-2. Перенести TLS в host-nginx с certbot.
+Что нужно для выпуска сертификата:
 
-Ниже быстрый host-nginx + certbot вариант.
-
-### 8.1 Установить nginx/certbot на хост
-
-```bash
-sudo apt install -y nginx certbot python3-certbot-nginx
-```
-
-### 8.2 Настроить reverse proxy в `/etc/nginx/sites-available/night_mode`
-
-```nginx
-server {
-    server_name nightmode.example.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:80;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
+1. DNS `A`/`AAAA` запись домена `econom.am` должна указывать на сервер.
+2. На сервере должны быть открыты `80/tcp` и `443/tcp`.
+3. Достаточно обычного запуска стека:
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/night_mode /etc/nginx/sites-enabled/night_mode
-sudo nginx -t
-sudo systemctl restart nginx
-sudo certbot --nginx -d nightmode.example.com
+docker compose up --build -d
+docker compose logs -f gateway
 ```
+
+При первом старте Caddy сам выпустит сертификат и начнет обслуживать `https://econom.am`.
 
 ## 9. Обновление приложения
 

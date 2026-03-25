@@ -1,0 +1,31 @@
+www.econom.am {
+	redir https://econom.am{uri} 301
+}
+
+econom.am {
+	encode zstd gzip
+
+	@nexara_api path /api/nexara-boost /api/nexara-boost/*
+	handle @nexara_api {
+		reverse_proxy nexara-boost:8787
+	}
+
+	@nexara_page path /nexara-boost /nexara-boost/*
+	handle @nexara_page {
+		reverse_proxy nexara-boost:8787
+	}
+
+	@backend path /api/* /auth/* /users/* /wallet/* /referrals/* /competitions/* /admin/*
+	handle @backend {
+		reverse_proxy backend:8000
+	}
+
+	@health path /health
+	handle @health {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
