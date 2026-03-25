@@ -4,7 +4,7 @@
 
 ## 1. Что нужно заранее
 - VPS с публичным IP
-- Домен (например `econom.am`)
+- Домен (например `night-mode.144.91.122.100.nip.io`)
 - Доступ по SSH
 - Git-репозиторий с проектом
 - PostgreSQL credentials
@@ -70,7 +70,7 @@ APP_NAME=Night Mode API
 APP_ENV=production
 APP_HOST=0.0.0.0
 APP_PORT=8000
-CORS_ORIGINS=https://econom.am
+CORS_ORIGINS=https://night-mode.144.91.122.100.nip.io
 
 AUTH_MODE=required
 DATABASE_URL=postgresql+psycopg://night_mode:<PASSWORD>@db:5432/night_mode
@@ -80,7 +80,7 @@ JWT_EXPIRE_MINUTES=15
 JWT_REFRESH_EXPIRE_DAYS=30
 TELEGRAM_BOT_TOKEN=<BOT_TOKEN>
 TELEGRAM_BOT_USERNAME=<BOT_USERNAME>
-TELEGRAM_WEBAPP_URL=https://econom.am/competitions
+TELEGRAM_WEBAPP_URL=https://night-mode.144.91.122.100.nip.io/competitions
 ```
 
 ## 6. Первый запуск
@@ -111,11 +111,11 @@ sudo ufw status
 
 ## 8. HTTPS
 
-Compose теперь поднимает gateway на `:80` и `:443` через Caddy и сам получает/обновляет Let's Encrypt сертификат для `econom.am`.
+Compose теперь поднимает gateway на `:80` и `:443` через Caddy и сам получает/обновляет Let's Encrypt сертификат для `night-mode.144.91.122.100.nip.io`.
 
 Что нужно для выпуска сертификата:
 
-1. DNS `A`/`AAAA` запись домена `econom.am` должна указывать на сервер.
+1. DNS для `night-mode.144.91.122.100.nip.io` должен резолвиться в IP сервера `144.91.122.100`.
 2. На сервере должны быть открыты `80/tcp` и `443/tcp`.
 3. Достаточно обычного запуска стека:
 
@@ -124,7 +124,7 @@ docker compose up --build -d
 docker compose logs -f gateway
 ```
 
-При первом старте Caddy сам выпустит сертификат и начнет обслуживать `https://econom.am`.
+При первом старте Caddy сам выпустит сертификат и начнет обслуживать `https://night-mode.144.91.122.100.nip.io`.
 
 ## 9. Обновление приложения
 
