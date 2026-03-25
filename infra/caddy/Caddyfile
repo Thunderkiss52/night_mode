@@ -1,8 +1,8 @@
-www.night-mode.144.91.122.100.nip.io {
+http://www.night-mode.144.91.122.100.nip.io {
 	redir https://night-mode.144.91.122.100.nip.io{uri} 301
 }
 
-night-mode.144.91.122.100.nip.io {
+http://night-mode.144.91.122.100.nip.io {
 	encode zstd gzip
 
 	@nexara_api path /api/nexara-boost /api/nexara-boost/*

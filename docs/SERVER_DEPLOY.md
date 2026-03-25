@@ -53,8 +53,8 @@ POSTGRES_HOST_PORT=5434
 BACKEND_HOST_BIND=127.0.0.1
 BACKEND_HOST_PORT=8000
 
-GATEWAY_HOST_BIND=0.0.0.0
-GATEWAY_HOST_PORT=80
+GATEWAY_HOST_BIND=127.0.0.1
+GATEWAY_HOST_PORT=8082
 
 NEXT_PUBLIC_API_BASE_URL=
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=...
@@ -111,20 +111,56 @@ sudo ufw status
 
 ## 8. HTTPS
 
-Compose теперь поднимает gateway на `:80` и `:443` через Caddy и сам получает/обновляет Let's Encrypt сертификат для `night-mode.144.91.122.100.nip.io`.
+Рекомендуемая схема для этого проекта: host `nginx` завершает TLS, а `night_mode` gateway слушает только внутренний HTTP на `127.0.0.1:8082`.
 
-Что нужно для выпуска сертификата:
+Что нужно:
 
 1. DNS для `night-mode.144.91.122.100.nip.io` должен резолвиться в IP сервера `144.91.122.100`.
 2. На сервере должны быть открыты `80/tcp` и `443/tcp`.
-3. Достаточно обычного запуска стека:
+3. В `.env` оставьте gateway внутренним:
+
+```dotenv
+GATEWAY_HOST_BIND=127.0.0.1
+GATEWAY_HOST_PORT=8082
+```
+
+4. Поднимите стек:
 
 ```bash
 docker compose up --build -d
 docker compose logs -f gateway
 ```
 
-При первом старте Caddy сам выпустит сертификат и начнет обслуживать `https://night-mode.144.91.122.100.nip.io`.
+5. Настройте host nginx как reverse proxy на `127.0.0.1:8082` и выпустите сертификат через certbot.
+
+Пример `/etc/nginx/sites-available/night-mode`:
+
+```nginx
+server {
+    listen 80;
+    server_name night-mode.144.91.122.100.nip.io;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name night-mode.144.91.122.100.nip.io;
+
+    ssl_certificate /etc/letsencrypt/live/night-mode.144.91.122.100.nip.io/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/night-mode.144.91.122.100.nip.io/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8082;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
 
 ## 9. Обновление приложения
 
